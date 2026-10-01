@@ -418,3 +418,4 @@ saveSession(session);
 if (session) { renderDecks(); syncInit(); } else showLogin();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
