@@ -1,12 +1,12 @@
 "use strict";
 
-/* ---------- Adattárolás (localStorage) ---------- */
+/* ---------- Storage (localStorage) ---------- */
 const STORAGE_KEY = "kartyatar-v1";
 const DAY = 24 * 60 * 60 * 1000;
 const MIN = 60 * 1000;
 
 let state = load();
-state.pending ||= []; // még nem szinkronizált műveletek
+state.pending ||= []; // operations not yet synced
 let currentDeckId = null;
 let queue = [];
 let current = null;
@@ -25,11 +25,15 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const $ = (id) => document.getElementById(id);
 const deckById = (id) => state.decks.find((d) => d.id === id);
 
-/* ---------- Supabase szinkron (nincs auth, egyetlen felhasználó) ---------- */
+/* ---------- Supabase sync ---------- */
 const CFG_KEY = "kartyatar-supabase";
-const cfg = window.DEFAULT_SUPABASE; // fix Supabase projekt (config.js)
+// Fixed Supabase project (the publishable key is meant for browsers, it is not a secret)
+const cfg = {
+  url: "https://atkblxtzromzfewtwmgq.supabase.co",
+  key: "sb_publishable_qZpDJaXm7iDFt7KIt-WwRA_J_u_g6ZX",
+};
 
-/* ---------- Google belépés (Supabase Auth, implicit flow) ---------- */
+/* ---------- Google sign-in (Supabase Auth, implicit flow) ---------- */
 const SESSION_KEY = "kartyatar-session";
 let session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
 let authError = "";
@@ -63,7 +67,7 @@ async function ensureToken() {
     headers: { apikey: cfg.key, "Content-Type": "application/json" },
     body: JSON.stringify({ refresh_token: session.refresh_token }),
   });
-  if (!res.ok) { saveSession(null); showLogin(); throw new Error("Lejárt munkamenet"); }
+  if (!res.ok) { saveSession(null); showLogin(); throw new Error("Session expired"); }
   const t = await res.json();
   saveSession({ access_token: t.access_token, refresh_token: t.refresh_token, expires_at: t.expires_at, email: session.email });
 }
@@ -72,8 +76,13 @@ function showLogin() {
   $("login-error").textContent = authError;
 }
 function login() {
-  const back = encodeURIComponent(location.origin + location.pathname);
-  location.href = `${cfg.url}/auth/v1/authorize?provider=google&redirect_to=${back}`;
+  try {
+    $("login-error").textContent = "Redirecting to Google…";
+    const back = encodeURIComponent(location.origin + location.pathname);
+    location.href = `${cfg.url}/auth/v1/authorize?provider=google&redirect_to=${back}`;
+  } catch (e) {
+    $("login-error").textContent = "Error: " + e.message;
+  }
 }
 let flushing = false;
 
@@ -103,8 +112,8 @@ async function api(path, method = "GET", body) {
   return method === "GET" ? res.json() : null;
 }
 
-// Minden változtatás egy sorba kerül, és sorrendben kerül fel a szerverre.
-// Ha nincs net, a sor megmarad, és később folytatódik.
+// Every change goes into a queue and is sent to the server in order.
+// If you are offline, the queue is kept and resumes later.
 function enqueue(type, id) {
   state.pending.push({ type, id });
   save();
@@ -131,10 +140,10 @@ async function flush() {
       state.pending.shift();
       save();
     }
-    setStatus("Szinkronizálva");
+    setStatus("Synced");
   } catch (e) {
     console.error(e);
-    setStatus("Nincs kapcsolat – később újrapróbálja");
+    setStatus("Offline – will retry later");
   }
   flushing = false;
 }
@@ -145,7 +154,7 @@ async function pull() {
     api("cards?select=*&order=created_at"),
   ]);
   if (!decks.length && state.decks.length) {
-    // Első indulás: a meglévő helyi adatok feltöltése
+    // First run: upload the existing local data
     for (const d of state.decks) state.pending.push({ type: "deck", id: d.id });
     for (const d of state.decks) for (const c of d.cards) state.pending.push({ type: "card", id: c.id });
     save();
@@ -161,28 +170,28 @@ async function pull() {
 
 async function syncInit() {
   if (!session) return showLogin();
-  setStatus("Szinkronizálás…");
+  setStatus("Syncing…");
   await flush();
   if (state.pending.length) return;
   try {
     await pull();
-    setStatus("Szinkronizálva");
+    setStatus("Synced");
   } catch (e) {
     console.error(e);
-    setStatus("Nincs kapcsolat");
+    setStatus("Offline");
   }
   renderDecks();
 }
 window.addEventListener("online", syncInit);
 
-/* ---------- Ütemezés (egyszerűsített SM-2) ---------- */
+/* ---------- Scheduling (simplified SM-2) ---------- */
 function newCard(front, back) {
   return { id: uid(), front, back, ease: 2.5, interval: 0, reps: 0, due: 0 };
 }
 const isNew = (c) => c.reps === 0 && c.due === 0;
 const isDue = (c) => c.due <= Date.now();
 
-// Visszaadja az új állapotot, ugyanezt használja az előnézet is a gombok alatt
+// Returns the new card state; the button previews use it too
 function schedule(card, rating) {
   let { ease, interval, reps } = card;
   let due;
@@ -208,11 +217,11 @@ function schedule(card, rating) {
 }
 function label(card, rating) {
   const s = schedule(card, rating);
-  if (rating === "again") return "1 perc";
-  return s.interval === 1 ? "1 nap" : s.interval + " nap";
+  if (rating === "again") return "1 min";
+  return s.interval === 1 ? "1 day" : s.interval + " days";
 }
 
-/* ---------- Nézetek ---------- */
+/* ---------- Views ---------- */
 function show(view) {
   for (const v of ["login", "decks", "deck", "study", "games", "game", "settings"]) $("view-" + v).hidden = v !== view;
   const tab = { decks: "decks", deck: "decks", games: "games", settings: "settings" }[view];
@@ -226,7 +235,7 @@ function renderDecks() {
   const list = $("deck-list");
   list.innerHTML = "";
   if (!state.decks.length) {
-    list.innerHTML = '<li class="empty">Még nincs paklid. Hozd létre az elsőt fent.</li>';
+    list.innerHTML = '<li class="empty">No decks yet. Create your first one above.</li>';
     return;
   }
   for (const d of state.decks) {
@@ -235,7 +244,7 @@ function renderDecks() {
     const n = d.cards.filter(isNew).length;
     const due = d.cards.filter((c) => !isNew(c) && isDue(c)).length;
     li.innerHTML = `<span class="deck-name"></span>
-      <span class="counts"><span class="c-new">${n} új</span><span class="c-due">${due} esedékes</span></span>`;
+      <span class="counts"><span class="c-new">${n} new</span><span class="c-due">${due} due</span></span>`;
     li.querySelector(".deck-name").textContent = d.name;
     const open = () => renderDeck(d.id);
     li.addEventListener("click", open);
@@ -250,12 +259,12 @@ function renderDeck(id) {
   $("deck-title").textContent = d.name;
   const n = d.cards.filter(isNew).length;
   const due = d.cards.filter((c) => !isNew(c) && isDue(c)).length;
-  $("deck-stats").textContent = `${d.cards.length} kártya · ${n} új · ${due} esedékes`;
+  $("deck-stats").textContent = `${d.cards.length} cards · ${n} new · ${due} due`;
   $("study-btn").disabled = n + due === 0;
 
   const list = $("card-list");
   list.innerHTML = "";
-  if (!d.cards.length) list.innerHTML = '<li class="empty">Add hozzá az első kártyát fent.</li>';
+  if (!d.cards.length) list.innerHTML = '<li class="empty">Add your first card above.</li>';
   for (const c of d.cards) {
     const li = document.createElement("li");
     const a = document.createElement("span");
@@ -264,7 +273,7 @@ function renderDeck(id) {
     b.textContent = c.back;
     const del = document.createElement("button");
     del.className = "danger small";
-    del.textContent = "Törlés";
+    del.textContent = "Delete";
     del.addEventListener("click", () => {
       d.cards = d.cards.filter((x) => x.id !== c.id);
       enqueue("delCard", c.id);
@@ -273,20 +282,20 @@ function renderDeck(id) {
     const tag = document.createElement("span");
     tag.className = "due-tag";
     tag.textContent = isNew(c)
-      ? "Új"
+      ? "New"
       : isDue(c)
-      ? "Esedékes"
-      : "Következő: " + new Date(c.due).toLocaleDateString("hu-HU");
+      ? "Due"
+      : "Next: " + new Date(c.due).toLocaleDateString("en-US");
     li.append(a, b, del, tag);
     list.append(li);
   }
 }
 
-/* ---------- Tanulás ---------- */
+/* ---------- Study ---------- */
 function startStudy() {
   const d = deckById(currentDeckId);
   const due = d.cards.filter((c) => !isNew(c) && isDue(c));
-  const fresh = d.cards.filter(isNew).slice(0, 20); // napi max. 20 új kártya
+  const fresh = d.cards.filter(isNew).slice(0, 20); // max. 20 new cards per session
   queue = [...due, ...fresh];
   show("study");
   nextCard();
@@ -306,7 +315,7 @@ function nextCard() {
   $("card-text").textContent = current.front;
   $("show-wrap").hidden = false;
   $("rate-wrap").hidden = true;
-  $("study-progress").textContent = `${queue.length} kártya maradt`;
+  $("study-progress").textContent = `${queue.length} cards left`;
 }
 function reveal() {
   if (!current || !$("rate-wrap").hidden) return;
@@ -320,12 +329,12 @@ function rate(rating) {
   if (!current || $("rate-wrap").hidden) return;
   Object.assign(current, schedule(current, rating));
   queue.shift();
-  if (rating === "again") queue.push(current); // még ebben a körben újra
+  if (rating === "again") queue.push(current); // show again in this session
   enqueue("card", current.id);
   nextCard();
 }
 
-/* ---------- Események ---------- */
+/* ---------- Events ---------- */
 $("back-btn").addEventListener("click", renderDecks);
 $("exit-study-btn").addEventListener("click", () => renderDeck(currentDeckId));
 
@@ -353,7 +362,7 @@ $("card-form").addEventListener("submit", (e) => {
 });
 $("delete-deck-btn").addEventListener("click", () => {
   const d = deckById(currentDeckId);
-  if (confirm(`Biztosan törlöd a(z) "${d.name}" paklit?`)) {
+  if (confirm(`Delete the deck "${d.name}"?`)) {
     state.decks = state.decks.filter((x) => x.id !== d.id);
     enqueue("delDeck", d.id);
     renderDecks();
@@ -366,7 +375,7 @@ document.querySelectorAll("[data-rating]").forEach((b) =>
   b.addEventListener("click", () => rate(b.dataset.rating))
 );
 
-// Billentyűparancsok: Szóköz = válasz, 1–4 = értékelés
+// Shortcuts: Space = show answer, 1–4 = rate
 document.addEventListener("keydown", (e) => {
   if ($("view-study").hidden || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
   if (e.code === "Space") { e.preventDefault(); reveal(); }
@@ -389,7 +398,7 @@ $("import-input").addEventListener("change", async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.decks)) throw new Error();
-    if (confirm("Ez felülírja a jelenlegi paklikat. Folytatod?")) {
+    if (confirm("This will overwrite your current decks. Continue?")) {
       state = { decks: data.decks, pending: [] };
       for (const d of state.decks) state.pending.push({ type: "deck", id: d.id });
       for (const d of state.decks) for (const c of d.cards) state.pending.push({ type: "card", id: c.id });
@@ -398,17 +407,17 @@ $("import-input").addEventListener("change", async (e) => {
       renderDecks();
     }
   } catch {
-    alert("A fájl nem érvényes mentés.");
+    alert("This file is not a valid backup.");
   }
   e.target.value = "";
 });
 
-/* ---------- Fiók ---------- */
+/* ---------- Account ---------- */
 $("login-btn").addEventListener("click", login);
 $("logout-btn").addEventListener("click", async () => {
   await flush();
   saveSession(null);
-  state = { decks: [], pending: [] }; // másik fiók adatai ne keveredjenek
+  state = { decks: [], pending: [] }; // keep different accounts' data separate
   save();
   showLogin();
 });
@@ -418,4 +427,3 @@ saveSession(session);
 if (session) { renderDecks(); syncInit(); } else showLogin();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
-
