@@ -8,17 +8,17 @@
   <meta name="apple-mobile-web-app-title" content="Kártyatár">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <title>Kártyatár – szóközi ismétlés</title>
+  <title>FlashCards – The easy way to master new words.</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="top">
-    <h1 id="home-link" tabindex="0">Kártyatár</h1>
+    <h1 id="home-link" tabindex="0">FlashCards</h1>
     <div class="top-actions">
       <span id="sync-status" class="muted" role="status"></span>
-      <button id="settings-btn" class="ghost">Adatbázis</button>
-      <button id="export-btn" class="ghost">Exportálás</button>
-      <label class="ghost btn-like">Importálás<input type="file" id="import-input" accept="application/json" hidden></label>
+      <button id="settings-btn" class="ghost">Database</button>
+      <button id="export-btn" class="ghost">Export</button>
+      <label class="ghost btn-like">Import<input type="file" id="import-input" accept="application/json" hidden></label>
     </div>
   </header>
 
@@ -27,7 +27,7 @@
     <section id="view-decks">
       <form id="deck-form" class="inline-form">
         <input id="deck-name" placeholder="Új pakli neve, pl. Angol szavak" required maxlength="60">
-        <button type="submit">Pakli létrehozása</button>
+        <button type="submit">Create a Deck</button>
       </form>
       <ul id="deck-list" class="deck-list"></ul>
     </section>
@@ -36,20 +36,20 @@
     <section id="view-deck" hidden>
       <div class="deck-head">
         <div>
-          <button id="back-btn" class="ghost small">Vissza</button>
+          <button id="back-btn" class="ghost small">Back</button>
           <h2 id="deck-title"></h2>
           <p id="deck-stats" class="muted"></p>
         </div>
         <div class="deck-head-actions">
-          <button id="study-btn">Tanulás</button>
-          <button id="delete-deck-btn" class="danger small">Pakli törlése</button>
+          <button id="study-btn">Learning</button>
+          <button id="delete-deck-btn" class="danger small">Delete deck</button>
         </div>
       </div>
 
       <form id="card-form" class="card-form">
-        <label>Előlap <textarea id="card-front" rows="2" required></textarea></label>
-        <label>Hátlap <textarea id="card-back" rows="2" required></textarea></label>
-        <button type="submit">Kártya hozzáadása</button>
+        <label>Front <textarea id="card-front" rows="2" required></textarea></label>
+        <label>Back <textarea id="card-back" rows="2" required></textarea></label>
+        <button type="submit">Add card</button>
       </form>
 
       <ul id="card-list" class="card-list"></ul>
@@ -58,34 +58,34 @@
     <!-- Tanulás -->
     <section id="view-study" hidden>
       <div class="study-bar">
-        <button id="exit-study-btn" class="ghost small">Kilépés</button>
+        <button id="exit-study-btn" class="ghost small">Exit</button>
         <span id="study-progress" class="muted"></span>
       </div>
       <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Kártya megfordítása">
         <p id="card-text"></p>
       </div>
       <div id="show-wrap" class="answer-row">
-        <button id="show-btn">Válasz mutatása <kbd>Szóköz</kbd></button>
+        <button id="show-btn">Show answer <kbd>Szóköz</kbd></button>
       </div>
       <div id="rate-wrap" class="answer-row rate" hidden>
-        <button data-rating="again" class="r-again">Újra <small id="t-again"></small></button>
-        <button data-rating="hard" class="r-hard">Nehéz <small id="t-hard"></small></button>
-        <button data-rating="good" class="r-good">Jó <small id="t-good"></small></button>
-        <button data-rating="easy" class="r-easy">Könnyű <small id="t-easy"></small></button>
+        <button data-rating="again" class="r-again">Again <small id="t-again"></small></button>
+        <button data-rating="hard" class="r-hard">Difficult <small id="t-hard"></small></button>
+        <button data-rating="good" class="r-good">Good <small id="t-good"></small></button>
+        <button data-rating="easy" class="r-easy">Easy <small id="t-easy"></small></button>
       </div>
-      <p id="study-done" class="done" hidden>Mára végeztél ebben a pakliban.</p>
+      <p id="study-done" class="done" hidden>You're done with this deck for today.</p>
     </section>
   </main>
 
   <dialog id="settings-dialog">
-    <h2>Supabase kapcsolat</h2>
-    <p class="muted">A kulcs csak ebben a böngészőben tárolódik, nem kerül a repóba.</p>
+    <h2>Supabase connection</h2>
+    <p class="muted">The key is stored only in this browser; it is not committed to the repository.</p>
     <label>Project URL <input id="cfg-url" placeholder="https://xxxx.supabase.co"></label>
-    <label>Anon / publishable kulcs <input id="cfg-key" autocomplete="off"></label>
+    <label>Anon / publishable key <input id="cfg-key" autocomplete="off"></label>
     <p id="cfg-error" class="err" role="alert"></p>
     <div class="dialog-actions">
-      <button id="cfg-cancel" class="ghost" type="button">Mégse</button>
-      <button id="cfg-save" type="button">Mentés</button>
+      <button id="cfg-cancel" class="ghost" type="button">Cancel</button>
+      <button id="cfg-save" type="button">Save</button>
     </div>
   </dialog>
 
