@@ -27,7 +27,7 @@ const deckById = (id) => state.decks.find((d) => d.id === id);
 
 /* ---------- Supabase szinkron (nincs auth, egyetlen felhasználó) ---------- */
 const CFG_KEY = "kartyatar-supabase";
-let cfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null");
+let cfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null") || window.DEFAULT_SUPABASE || null;
 let flushing = false;
 
 const setStatus = (t) => ($("sync-status").textContent = t);
@@ -379,3 +379,5 @@ $("cfg-save").addEventListener("click", async () => {
 
 renderDecks();
 syncInit();
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
