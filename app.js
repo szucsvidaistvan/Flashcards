@@ -82,10 +82,10 @@ async function flush() {
       state.pending.shift();
       save();
     }
-    setStatus("Szinkronizálva");
+    setStatus("Synchronized");
   } catch (e) {
     console.error(e);
-    setStatus("Nincs kapcsolat – később újrapróbálja");
+    setStatus("No connection – will retry later");
   }
   flushing = false;
 }
@@ -111,16 +111,16 @@ async function pull() {
 }
 
 async function syncInit() {
-  if (!cfg) return setStatus("Nincs beállítva");
-  setStatus("Szinkronizálás…");
+  if (!cfg) return setStatus("Not set");
+  setStatus("Synchronizing…");
   await flush();
   if (state.pending.length) return;
   try {
     await pull();
-    setStatus("Szinkronizálva");
+    setStatus("Synchronized");
   } catch (e) {
     console.error(e);
-    setStatus("Nincs kapcsolat");
+    setStatus("No connection");
   }
   renderDecks();
 }
@@ -173,7 +173,7 @@ function renderDecks() {
   const list = $("deck-list");
   list.innerHTML = "";
   if (!state.decks.length) {
-    list.innerHTML = '<li class="empty">Még nincs paklid. Hozd létre az elsőt fent.</li>';
+    list.innerHTML = '<li class="empty">You don't have a deck yet. Create your first one above.</li>';
     return;
   }
   for (const d of state.decks) {
@@ -182,7 +182,7 @@ function renderDecks() {
     const n = d.cards.filter(isNew).length;
     const due = d.cards.filter((c) => !isNew(c) && isDue(c)).length;
     li.innerHTML = `<span class="deck-name"></span>
-      <span class="counts"><span class="c-new">${n} új</span><span class="c-due">${due} esedékes</span></span>`;
+      <span class="counts"><span class="c-new">${n} New</span><span class="c-due">${due} due</span></span>`;
     li.querySelector(".deck-name").textContent = d.name;
     const open = () => renderDeck(d.id);
     li.addEventListener("click", open);
@@ -197,12 +197,12 @@ function renderDeck(id) {
   $("deck-title").textContent = d.name;
   const n = d.cards.filter(isNew).length;
   const due = d.cards.filter((c) => !isNew(c) && isDue(c)).length;
-  $("deck-stats").textContent = `${d.cards.length} kártya · ${n} új · ${due} esedékes`;
+  $("deck-stats").textContent = `${d.cards.length} Card · ${n} New · ${due} due`;
   $("study-btn").disabled = n + due === 0;
 
   const list = $("card-list");
   list.innerHTML = "";
-  if (!d.cards.length) list.innerHTML = '<li class="empty">Add hozzá az első kártyát fent.</li>';
+  if (!d.cards.length) list.innerHTML = '<li class="empty">Add the first card at the top.</li>';
   for (const c of d.cards) {
     const li = document.createElement("li");
     const a = document.createElement("span");
@@ -211,7 +211,7 @@ function renderDeck(id) {
     b.textContent = c.back;
     const del = document.createElement("button");
     del.className = "danger small";
-    del.textContent = "Törlés";
+    del.textContent = "Delete";
     del.addEventListener("click", () => {
       d.cards = d.cards.filter((x) => x.id !== c.id);
       enqueue("delCard", c.id);
@@ -220,10 +220,10 @@ function renderDeck(id) {
     const tag = document.createElement("span");
     tag.className = "due-tag";
     tag.textContent = isNew(c)
-      ? "Új"
+      ? "New"
       : isDue(c)
-      ? "Esedékes"
-      : "Következő: " + new Date(c.due).toLocaleDateString("hu-HU");
+      ? "Due"
+      : "Next: " + new Date(c.due).toLocaleDateString("hu-HU");
     li.append(a, b, del, tag);
     list.append(li);
   }
@@ -253,7 +253,7 @@ function nextCard() {
   $("card-text").textContent = current.front;
   $("show-wrap").hidden = false;
   $("rate-wrap").hidden = true;
-  $("study-progress").textContent = `${queue.length} kártya maradt`;
+  $("study-progress").textContent = `${queue.length} card left over`;
 }
 function reveal() {
   if (!current || !$("rate-wrap").hidden) return;
@@ -302,7 +302,7 @@ $("card-form").addEventListener("submit", (e) => {
 });
 $("delete-deck-btn").addEventListener("click", () => {
   const d = deckById(currentDeckId);
-  if (confirm(`Biztosan törlöd a(z) "${d.name}" paklit?`)) {
+  if (confirm(`You must delete it "${d.name}" deck?`)) {
     state.decks = state.decks.filter((x) => x.id !== d.id);
     enqueue("delDeck", d.id);
     renderDecks();
@@ -338,7 +338,7 @@ $("import-input").addEventListener("change", async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.decks)) throw new Error();
-    if (confirm("Ez felülírja a jelenlegi paklikat. Folytatod?")) {
+    if (confirm("This will overwrite the current decks. Do you want to continue?")) {
       state = { decks: data.decks, pending: [] };
       for (const d of state.decks) state.pending.push({ type: "deck", id: d.id });
       for (const d of state.decks) for (const c of d.cards) state.pending.push({ type: "card", id: c.id });
@@ -347,7 +347,7 @@ $("import-input").addEventListener("change", async (e) => {
       renderDecks();
     }
   } catch {
-    alert("A fájl nem érvényes mentés.");
+    alert("The file is not a valid save.");
   }
   e.target.value = "";
 });
@@ -368,7 +368,7 @@ $("cfg-save").addEventListener("click", async () => {
     await api("decks?select=id&limit=1");
   } catch (e) {
     cfg = prev;
-    $("cfg-error").textContent = "Nem sikerült csatlakozni. Ellenőrizd az URL-t, a kulcsot és az SQL-t.";
+    $("cfg-error").textContent = "Connection failed. Check the URL, the key, and the SQL.";
     return;
   }
   localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
