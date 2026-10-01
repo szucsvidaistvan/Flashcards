@@ -1,6 +1,6 @@
 // Egyszerű offline gyorsítótár az alkalmazás fájljaihoz (az adatok a Supabase-ből / localStorage-ból jönnek)
-const CACHE = "kartyatar-v1";
-const FILES = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CACHE = "kartyatar-v2";
+const FILES = ["./", "index.html", "style.css", "app.js", "games.js", "config.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
