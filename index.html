@@ -14,6 +14,17 @@
 </head>
 <body>
   <main>
+    <!-- Belépés -->
+    <section id="view-login" hidden>
+      <div class="login">
+        <div class="login-logo">🃏</div>
+        <h1 class="title">Kártyatár</h1>
+        <p class="muted">Jelentkezz be, hogy a kártyáid minden eszközödön ott legyenek.</p>
+        <button id="login-btn" class="big"><span class="g">G</span> Belépés Google-fiókkal</button>
+        <p id="login-error" class="err" role="alert"></p>
+      </div>
+    </section>
+
     <!-- Kártyák fül -->
     <section id="view-decks">
       <h1 class="title">Kártyák</h1>
@@ -25,7 +36,10 @@
     </section>
 
     <section id="view-deck" hidden>
-      <button id="back-btn" class="ghost small">‹ Vissza</button>
+      <div class="deck-top">
+        <button id="back-btn" class="ghost small">‹ Vissza</button>
+        <button id="delete-deck-btn" class="danger small">Pakli törlése</button>
+      </div>
       <h1 id="deck-title" class="title"></h1>
       <p id="deck-stats" class="muted"></p>
       <button id="study-btn" class="big">Tanulás</button>
@@ -35,7 +49,6 @@
         <button type="submit">Kártya hozzáadása</button>
       </form>
       <ul id="card-list" class="card-list"></ul>
-      <button id="delete-deck-btn" class="danger small">Pakli törlése</button>
     </section>
 
     <section id="view-study" hidden>
@@ -80,7 +93,8 @@
       <h1 class="title">Beállítások</h1>
       <ul class="settings-list">
         <li><span>Szinkron</span><span id="sync-status" class="muted" role="status"></span></li>
-        <li><button id="settings-btn" class="ghost">Adatbázis beállítása</button></li>
+        <li><span>Fiók</span><span id="account-email" class="muted"></span></li>
+        <li><button id="logout-btn" class="ghost">Kijelentkezés</button></li>
         <li><label>Kiejtés nyelve (hallgatós kvíz)
           <select id="lang-select">
             <option value="en-US">Angol (US)</option><option value="en-GB">Angol (UK)</option>
@@ -98,18 +112,6 @@
     <button data-tab="games"><span class="ic">🎮</span>Játékok</button>
     <button data-tab="settings"><span class="ic">⚙️</span>Beállítások</button>
   </nav>
-
-  <dialog id="settings-dialog">
-    <h2>Supabase kapcsolat</h2>
-    <p class="muted">A kulcs csak ebben a böngészőben tárolódik.</p>
-    <label>Project URL <input id="cfg-url" placeholder="https://xxxx.supabase.co"></label>
-    <label>Anon / publishable kulcs <input id="cfg-key" autocomplete="off"></label>
-    <p id="cfg-error" class="err" role="alert"></p>
-    <div class="dialog-actions">
-      <button id="cfg-cancel" class="ghost" type="button">Mégse</button>
-      <button id="cfg-save" type="button">Mentés</button>
-    </div>
-  </dialog>
 
   <script src="config.js"></script>
   <script src="app.js"></script>
