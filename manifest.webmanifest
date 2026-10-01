@@ -1,6 +1,6 @@
 {
-  "name": "FlashCards",
-  "short_name": "FlashCards",
+  "name": "Kártyatár",
+  "short_name": "Kártyatár",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
