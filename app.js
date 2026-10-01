@@ -165,7 +165,11 @@ function label(card, rating) {
 
 /* ---------- Nézetek ---------- */
 function show(view) {
-  for (const v of ["decks", "deck", "study"]) $("view-" + v).hidden = v !== view;
+  for (const v of ["decks", "deck", "study", "games", "game", "settings"]) $("view-" + v).hidden = v !== view;
+  const tab = { decks: "decks", deck: "decks", games: "games", settings: "settings" }[view];
+  document.querySelectorAll(".tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.body.classList.toggle("immersive", view === "study" || view === "game");
+  window.scrollTo(0, 0);
 }
 function renderDecks() {
   show("decks");
@@ -273,8 +277,6 @@ function rate(rating) {
 }
 
 /* ---------- Események ---------- */
-$("home-link").addEventListener("click", renderDecks);
-$("home-link").addEventListener("keydown", (e) => e.key === "Enter" && renderDecks());
 $("back-btn").addEventListener("click", renderDecks);
 $("exit-study-btn").addEventListener("click", () => renderDeck(currentDeckId));
 
