@@ -1,5 +1,5 @@
 "use strict";
-/* Játékok: gyakorlás a kiválasztott pakli kártyáival (az ütemezést nem érintik) */
+/* Games: practice with the cards of the selected deck (they do not affect scheduling) */
 let gDeckId = null;
 const area = $("game-area");
 const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
@@ -20,16 +20,16 @@ function speak(text) {
 function finish(title, detail, again) {
   area.innerHTML = "";
   const box = h("div", "result");
-  const a = h("button", null, "Újra");
+  const a = h("button", null, "Play again");
   a.onclick = again;
-  const b = h("button", "ghost", "Vissza a játékokhoz");
+  const b = h("button", "ghost", "Back to games");
   b.onclick = renderGames;
   box.append(h("h2", null, title), h("p", "muted", detail), a, b);
   area.append(box);
   setScore("");
 }
 
-/* 1) Párosítás */
+/* 1) Match */
 function playMatch(cards, again) {
   const set = shuffle(cards).slice(0, 6);
   let sel = null, left = set.length, wrong = 0;
@@ -51,7 +51,7 @@ function playMatch(cards, again) {
     } else if (sel.dataset.id === b.dataset.id) {
       for (const x of [sel, b]) { x.classList.remove("sel"); x.classList.add("ok"); x.disabled = true; }
       sel = null;
-      if (--left === 0) setTimeout(() => finish("Kész!", `${wrong} hiba`, again), 500);
+      if (--left === 0) setTimeout(() => finish("Done!", `${wrong} mistake${wrong === 1 ? "" : "s"}`, again), 500);
     } else {
       wrong++;
       const pair = [sel, b];
@@ -62,12 +62,12 @@ function playMatch(cards, again) {
   });
 }
 
-/* 2) Kvíz és 3) Hallgatós kvíz */
+/* 2) Quiz and 3) Audio quiz */
 function playQuiz(cards, audio, again) {
   const qs = shuffle(cards).slice(0, 10);
   let i = 0, score = 0;
   const next = () => {
-    if (i >= qs.length) return finish("Eredmény", `${score} / ${qs.length} helyes`, again);
+    if (i >= qs.length) return finish("Result", `${score} / ${qs.length} correct`, again);
     const c = qs[i];
     setScore(`${i + 1} / ${qs.length}`);
     area.innerHTML = "";
@@ -75,7 +75,7 @@ function playQuiz(cards, audio, again) {
     if (audio) {
       q.classList.add("audio");
       q.setAttribute("role", "button");
-      q.setAttribute("aria-label", "Szó meghallgatása");
+      q.setAttribute("aria-label", "Play the word");
       q.onclick = () => speak(c.front);
       speak(c.front);
     }
@@ -96,18 +96,18 @@ function playQuiz(cards, audio, again) {
       opts.append(b);
     });
     area.append(q, opts);
-    if (audio) area.append(h("p", "muted", "Koppints a hangszóróra az ismétléshez."));
+    if (audio) area.append(h("p", "muted", "Tap the speaker to hear it again."));
   };
   next();
 }
 
-/* 4) Anagramma */
+/* 4) Anagram */
 function playAnagram(cards, again) {
   const words = shuffle(cards.filter((c) => c.front.replace(/\s/g, "").length > 1)).slice(0, 8);
-  if (!words.length) return finish("Nincs megfelelő szó", "Legalább 2 betűs előlap kell.", renderGames);
+  if (!words.length) return finish("No suitable words", "You need cards with at least 2 letters on the front.", renderGames);
   let i = 0, score = 0;
   const next = () => {
-    if (i >= words.length) return finish("Eredmény", `${score} / ${words.length} szó`, again);
+    if (i >= words.length) return finish("Result", `${score} / ${words.length} words`, again);
     const c = words[i];
     setScore(`${i + 1} / ${words.length}`);
     const target = [...c.front.replace(/\s/g, "")];
@@ -136,7 +136,7 @@ function playAnagram(cards, again) {
       if (ok) { score++; i++; setTimeout(next, 800); }
       else setTimeout(() => { slots.classList.remove("bad"); picked.splice(0).forEach((p) => (p.used = false)); draw(); }, 700);
     };
-    const skip = h("button", "ghost", "Átugrás");
+    const skip = h("button", "ghost", "Skip");
     skip.onclick = () => { i++; next(); };
     area.innerHTML = "";
     area.append(h("div", "question", c.back), slots, bank, skip);
@@ -145,27 +145,27 @@ function playAnagram(cards, again) {
   next();
 }
 
-/* 5) Gépelés */
+/* 5) Typing */
 function playType(cards, again) {
   const qs = shuffle(cards).slice(0, 10);
   let i = 0, score = 0;
   const next = () => {
-    if (i >= qs.length) return finish("Eredmény", `${score} / ${qs.length} helyes`, again);
+    if (i >= qs.length) return finish("Result", `${score} / ${qs.length} correct`, again);
     const c = qs[i];
     setScore(`${i + 1} / ${qs.length}`);
     const inp = h("input");
-    Object.assign(inp, { placeholder: "Írd be a szót…", autocomplete: "off", autocapitalize: "off", spellcheck: false });
-    const fb = h("p", "feedback"), btn = h("button", null, "Ellenőrzés");
+    Object.assign(inp, { placeholder: "Type the word…", autocomplete: "off", autocapitalize: "off", spellcheck: false });
+    const fb = h("p", "feedback"), btn = h("button", null, "Check");
     let done = false;
     const submit = () => {
       if (done) { i++; return next(); }
       done = true;
       const ok = inp.value.trim().toLowerCase() === c.front.trim().toLowerCase();
       if (ok) score++;
-      fb.textContent = ok ? "Helyes!" : "Helyes válasz: " + c.front;
+      fb.textContent = ok ? "Correct!" : "Correct answer: " + c.front;
       fb.className = "feedback " + (ok ? "ok" : "bad");
       inp.disabled = true;
-      btn.textContent = "Tovább";
+      btn.textContent = "Next";
       btn.focus();
     };
     btn.onclick = submit;
@@ -177,19 +177,19 @@ function playType(cards, again) {
   next();
 }
 
-/* Játéklista */
+/* Game list */
 const GAMES = [
-  { icon: "🧩", color: "#e0a21b", name: "Párosítás", desc: "Párosítsd az előlapokat a hátlapokkal", min: 3, run: playMatch },
-  { icon: "❓", color: "#3b9bff", name: "Kvíz", desc: "Válaszd ki a helyes jelentést", min: 4, run: (c, a) => playQuiz(c, false, a) },
-  { icon: "🎧", color: "#ef4a5f", name: "Hallgatós kvíz", desc: "Hallgasd meg a szót, és válaszd ki a jelentését", min: 4, run: (c, a) => playQuiz(c, true, a) },
-  { icon: "🔤", color: "#34b27b", name: "Anagramma", desc: "Rakd ki a szót a kevert betűkből", min: 1, run: playAnagram },
-  { icon: "⌨️", color: "#8a5cf0", name: "Gépelés", desc: "Írd be a szót a jelentés alapján", min: 1, run: playType },
+  { icon: "🧩", color: "#e0a21b", name: "Match", desc: "Match the fronts to the backs", min: 3, run: playMatch },
+  { icon: "❓", color: "#3b9bff", name: "Quiz", desc: "Choose the correct meaning", min: 4, run: (c, a) => playQuiz(c, false, a) },
+  { icon: "🎧", color: "#ef4a5f", name: "Audio quiz", desc: "Listen to the word and pick its meaning", min: 4, run: (c, a) => playQuiz(c, true, a) },
+  { icon: "🔤", color: "#34b27b", name: "Anagram", desc: "Unscramble the word from its letters", min: 1, run: playAnagram },
+  { icon: "⌨️", color: "#8a5cf0", name: "Typing", desc: "Type the word from its meaning", min: 1, run: playType },
 ];
 
 function startGame(g) {
   const d = deckById(gDeckId);
   if (!d || d.cards.length < g.min) {
-    $("games-msg").textContent = d ? `Ehhez legalább ${g.min} kártya kell a pakliban.` : "Előbb hozz létre egy paklit.";
+    $("games-msg").textContent = d ? `You need at least ${g.min} cards in this deck.` : "Create a deck first.";
     return;
   }
   $("games-msg").textContent = "";
@@ -207,7 +207,7 @@ function renderGames() {
   state.decks.forEach((d) => { const o = h("option", null, `${d.name} (${d.cards.length})`); o.value = d.id; sel.append(o); });
   if (!deckById(gDeckId)) gDeckId = state.decks[0]?.id;
   sel.value = gDeckId || "";
-  $("games-msg").textContent = state.decks.length ? "" : "Előbb hozz létre egy paklit a Kártyák fülön.";
+  $("games-msg").textContent = state.decks.length ? "" : "Create a deck first in the Cards tab.";
   const list = $("game-list");
   list.innerHTML = "";
   for (const g of GAMES) {
