@@ -1,121 +1,119 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0b0b0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Kártyatár">
+  <meta name="apple-mobile-web-app-title" content="Flashcards">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <title>Kártyatár</title>
+  <title>Flashcards</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main>
-    <!-- Belépés -->
+    <!-- Login -->
     <section id="view-login" hidden>
       <div class="login">
         <div class="login-logo">🃏</div>
-        <h1 class="title">Kártyatár</h1>
-        <p class="muted">Jelentkezz be, hogy a kártyáid minden eszközödön ott legyenek.</p>
-        <button id="login-btn" class="big"><span class="g">G</span> Belépés Google-fiókkal</button>
+        <h1 class="title">Flashcards</h1>
+        <p class="muted">Sign in to keep your cards in sync on all your devices.</p>
+        <button id="login-btn" class="big"><span class="g">G</span> Sign in with Google</button>
         <p id="login-error" class="err" role="alert"></p>
       </div>
     </section>
 
-    <!-- Kártyák fül -->
+    <!-- Cards tab -->
     <section id="view-decks">
-      <h1 class="title">Kártyák</h1>
+      <h1 class="title">Cards</h1>
       <form id="deck-form" class="inline-form">
-        <input id="deck-name" placeholder="Új pakli neve" required maxlength="60">
-        <button type="submit">Létrehozás</button>
+        <input id="deck-name" placeholder="New deck name" required maxlength="60">
+        <button type="submit">Create</button>
       </form>
       <ul id="deck-list" class="deck-list"></ul>
     </section>
 
     <section id="view-deck" hidden>
       <div class="deck-top">
-        <button id="back-btn" class="ghost small">‹ Vissza</button>
-        <button id="delete-deck-btn" class="danger small">Pakli törlése</button>
+        <button id="back-btn" class="ghost small">‹ Back</button>
+        <button id="delete-deck-btn" class="danger small">Delete deck</button>
       </div>
       <h1 id="deck-title" class="title"></h1>
       <p id="deck-stats" class="muted"></p>
-      <button id="study-btn" class="big">Tanulás</button>
+      <button id="study-btn" class="big">Study</button>
       <form id="card-form" class="card-form">
-        <label>Előlap <textarea id="card-front" rows="2" required></textarea></label>
-        <label>Hátlap <textarea id="card-back" rows="2" required></textarea></label>
-        <button type="submit">Kártya hozzáadása</button>
+        <label>Front <textarea id="card-front" rows="2" required></textarea></label>
+        <label>Back <textarea id="card-back" rows="2" required></textarea></label>
+        <button type="submit">Add card</button>
       </form>
       <ul id="card-list" class="card-list"></ul>
     </section>
 
     <section id="view-study" hidden>
       <div class="study-bar">
-        <button id="exit-study-btn" class="ghost small">Kilépés</button>
+        <button id="exit-study-btn" class="ghost small">Exit</button>
         <span id="study-progress" class="muted"></span>
       </div>
-      <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Kártya megfordítása">
+      <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Flip card">
         <p id="card-text"></p>
       </div>
       <div id="show-wrap" class="answer-row">
-        <button id="show-btn" class="big">Válasz mutatása <kbd>Szóköz</kbd></button>
+        <button id="show-btn" class="big">Show answer <kbd>Space</kbd></button>
       </div>
       <div id="rate-wrap" class="answer-row rate" hidden>
-        <button data-rating="again" class="r-again">Újra <small id="t-again"></small></button>
-        <button data-rating="hard" class="r-hard">Nehéz <small id="t-hard"></small></button>
-        <button data-rating="good" class="r-good">Jó <small id="t-good"></small></button>
-        <button data-rating="easy" class="r-easy">Könnyű <small id="t-easy"></small></button>
+        <button data-rating="again" class="r-again">Again <small id="t-again"></small></button>
+        <button data-rating="hard" class="r-hard">Hard <small id="t-hard"></small></button>
+        <button data-rating="good" class="r-good">Good <small id="t-good"></small></button>
+        <button data-rating="easy" class="r-easy">Easy <small id="t-easy"></small></button>
       </div>
-      <p id="study-done" class="done" hidden>Mára végeztél ebben a pakliban.</p>
+      <p id="study-done" class="done" hidden>You're done with this deck for today.</p>
     </section>
 
-    <!-- Játékok fül -->
+    <!-- Games tab -->
     <section id="view-games" hidden>
-      <h1 class="title">Játékok</h1>
-      <label class="select-label">Pakli <select id="games-deck"></select></label>
+      <h1 class="title">Games</h1>
+      <label class="select-label">Deck <select id="games-deck"></select></label>
       <p id="games-msg" class="err" role="alert"></p>
       <ul id="game-list" class="game-list"></ul>
     </section>
 
     <section id="view-game" hidden>
       <div class="study-bar">
-        <button id="exit-game-btn" class="ghost small">Kilépés</button>
+        <button id="exit-game-btn" class="ghost small">Exit</button>
         <strong id="game-title"></strong>
         <span id="game-score" class="muted"></span>
       </div>
       <div id="game-area"></div>
     </section>
 
-    <!-- Beállítások fül -->
+    <!-- Settings tab -->
     <section id="view-settings" hidden>
-      <h1 class="title">Beállítások</h1>
+      <h1 class="title">Settings</h1>
       <ul class="settings-list">
-        <li><span>Szinkron</span><span id="sync-status" class="muted" role="status"></span></li>
-        <li><span>Fiók</span><span id="account-email" class="muted"></span></li>
-        <li><button id="logout-btn" class="ghost">Kijelentkezés</button></li>
-        <li><label>Kiejtés nyelve (hallgatós kvíz)
+        <li><span>Sync</span><span id="sync-status" class="muted" role="status"></span></li>
+        <li><span>Account</span><span id="account-email" class="muted"></span></li>
+        <li><button id="logout-btn" class="ghost">Sign out</button></li>
+        <li><label>Pronunciation language (audio quiz)
           <select id="lang-select">
-            <option value="en-US">Angol (US)</option><option value="en-GB">Angol (UK)</option>
-            <option value="de-DE">Német</option><option value="es-ES">Spanyol</option>
-            <option value="fr-FR">Francia</option><option value="it-IT">Olasz</option>
+            <option value="en-US">English (US)</option><option value="en-GB">English (UK)</option>
+            <option value="de-DE">German</option><option value="es-ES">Spanish</option>
+            <option value="fr-FR">French</option><option value="it-IT">Italian</option>
           </select></label></li>
-        <li><button id="export-btn" class="ghost">Exportálás (JSON)</button></li>
-        <li><label class="ghost btn-like">Importálás<input type="file" id="import-input" accept="application/json" hidden></label></li>
+        <li><button id="export-btn" class="ghost">Export (JSON)</button></li>
+        <li><label class="ghost btn-like">Import<input type="file" id="import-input" accept="application/json" hidden></label></li>
       </ul>
     </section>
   </main>
 
-  <nav class="tabbar" aria-label="Fő navigáció">
-    <button data-tab="decks" class="active"><span class="ic">🃏</span>Kártyák</button>
-    <button data-tab="games"><span class="ic">🎮</span>Játékok</button>
-    <button data-tab="settings"><span class="ic">⚙️</span>Beállítások</button>
+  <nav class="tabbar" aria-label="Main navigation">
+    <button data-tab="decks" class="active"><span class="ic">🃏</span>Cards</button>
+    <button data-tab="games"><span class="ic">🎮</span>Games</button>
+    <button data-tab="settings"><span class="ic">⚙️</span>Settings</button>
   </nav>
 
-  <script src="config.js"></script>
   <script src="app.js"></script>
   <script src="games.js"></script>
 </body>
 </html>
-
