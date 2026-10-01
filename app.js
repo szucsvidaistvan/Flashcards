@@ -27,7 +27,54 @@ const deckById = (id) => state.decks.find((d) => d.id === id);
 
 /* ---------- Supabase szinkron (nincs auth, egyetlen felhasználó) ---------- */
 const CFG_KEY = "kartyatar-supabase";
-let cfg = JSON.parse(localStorage.getItem(CFG_KEY) || "null") || window.DEFAULT_SUPABASE || null;
+const cfg = window.DEFAULT_SUPABASE; // fix Supabase projekt (config.js)
+
+/* ---------- Google belépés (Supabase Auth, implicit flow) ---------- */
+const SESSION_KEY = "kartyatar-session";
+let session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+let authError = "";
+
+function saveSession(x) {
+  session = x;
+  if (x) localStorage.setItem(SESSION_KEY, JSON.stringify(x));
+  else localStorage.removeItem(SESSION_KEY);
+  $("account-email").textContent = x?.email || "";
+}
+function readHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (p.get("error_description")) authError = p.get("error_description");
+  const token = p.get("access_token");
+  if (token) {
+    let email = "";
+    try { email = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))).email || ""; } catch {}
+    saveSession({
+      access_token: token,
+      refresh_token: p.get("refresh_token"),
+      expires_at: Math.floor(Date.now() / 1000) + Number(p.get("expires_in") || 3600),
+      email,
+    });
+  }
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+}
+async function ensureToken() {
+  if (!session || session.expires_at - 60 > Date.now() / 1000) return;
+  const res = await fetch(cfg.url + "/auth/v1/token?grant_type=refresh_token", {
+    method: "POST",
+    headers: { apikey: cfg.key, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: session.refresh_token }),
+  });
+  if (!res.ok) { saveSession(null); showLogin(); throw new Error("Lejárt munkamenet"); }
+  const t = await res.json();
+  saveSession({ access_token: t.access_token, refresh_token: t.refresh_token, expires_at: t.expires_at, email: session.email });
+}
+function showLogin() {
+  show("login");
+  $("login-error").textContent = authError;
+}
+function login() {
+  const back = encodeURIComponent(location.origin + location.pathname);
+  location.href = `${cfg.url}/auth/v1/authorize?provider=google&redirect_to=${back}`;
+}
 let flushing = false;
 
 const setStatus = (t) => ($("sync-status").textContent = t);
@@ -41,10 +88,12 @@ const fromRow = (r) => ({
 });
 
 async function api(path, method = "GET", body) {
+  await ensureToken();
   const res = await fetch(cfg.url.replace(/\/$/, "") + "/rest/v1/" + path, {
     method,
     headers: {
       apikey: cfg.key,
+      Authorization: "Bearer " + session.access_token,
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates,return=minimal",
     },
@@ -63,7 +112,7 @@ function enqueue(type, id) {
 }
 
 async function flush() {
-  if (!cfg || flushing) return;
+  if (!session || flushing) return;
   flushing = true;
   try {
     while (state.pending.length) {
@@ -111,7 +160,7 @@ async function pull() {
 }
 
 async function syncInit() {
-  if (!cfg) return setStatus("Nincs beállítva");
+  if (!session) return showLogin();
   setStatus("Szinkronizálás…");
   await flush();
   if (state.pending.length) return;
@@ -165,10 +214,10 @@ function label(card, rating) {
 
 /* ---------- Nézetek ---------- */
 function show(view) {
-  for (const v of ["decks", "deck", "study", "games", "game", "settings"]) $("view-" + v).hidden = v !== view;
+  for (const v of ["login", "decks", "deck", "study", "games", "game", "settings"]) $("view-" + v).hidden = v !== view;
   const tab = { decks: "decks", deck: "decks", games: "games", settings: "settings" }[view];
   document.querySelectorAll(".tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-  document.body.classList.toggle("immersive", view === "study" || view === "game");
+  document.body.classList.toggle("immersive", view === "study" || view === "game" || view === "login");
   window.scrollTo(0, 0);
 }
 function renderDecks() {
@@ -354,32 +403,18 @@ $("import-input").addEventListener("change", async (e) => {
   e.target.value = "";
 });
 
-/* ---------- Beállítások ---------- */
-$("settings-btn").addEventListener("click", () => {
-  $("cfg-url").value = cfg?.url || "";
-  $("cfg-key").value = cfg?.key || "";
-  $("settings-dialog").showModal();
-});
-$("cfg-cancel").addEventListener("click", () => $("settings-dialog").close());
-$("cfg-save").addEventListener("click", async () => {
-  const next = { url: $("cfg-url").value.trim(), key: $("cfg-key").value.trim() };
-  if (!next.url || !next.key) return;
-  const prev = cfg;
-  cfg = next;
-  try {
-    await api("decks?select=id&limit=1");
-  } catch (e) {
-    cfg = prev;
-    $("cfg-error").textContent = "Nem sikerült csatlakozni. Ellenőrizd az URL-t, a kulcsot és az SQL-t.";
-    return;
-  }
-  localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
-  $("cfg-error").textContent = "";
-  $("settings-dialog").close();
-  syncInit();
+/* ---------- Fiók ---------- */
+$("login-btn").addEventListener("click", login);
+$("logout-btn").addEventListener("click", async () => {
+  await flush();
+  saveSession(null);
+  state = { decks: [], pending: [] }; // másik fiók adatai ne keveredjenek
+  save();
+  showLogin();
 });
 
-renderDecks();
-syncInit();
+readHash();
+saveSession(session);
+if (session) { renderDecks(); syncInit(); } else showLogin();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
