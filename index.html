@@ -3,59 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#3d4fd6">
+  <meta name="theme-color" content="#0b0b0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Kártyatár">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <title>Kártyatár – szóközi ismétlés</title>
+  <title>Kártyatár</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="top">
-    <h1 id="home-link" tabindex="0">Kártyatár</h1>
-    <div class="top-actions">
-      <span id="sync-status" class="muted" role="status"></span>
-      <button id="settings-btn" class="ghost">Adatbázis</button>
-      <button id="export-btn" class="ghost">Exportálás</button>
-      <label class="ghost btn-like">Importálás<input type="file" id="import-input" accept="application/json" hidden></label>
-    </div>
-  </header>
-
   <main>
-    <!-- Paklik listája -->
+    <!-- Kártyák fül -->
     <section id="view-decks">
+      <h1 class="title">Kártyák</h1>
       <form id="deck-form" class="inline-form">
-        <input id="deck-name" placeholder="Új pakli neve, pl. Angol szavak" required maxlength="60">
-        <button type="submit">Pakli létrehozása</button>
+        <input id="deck-name" placeholder="Új pakli neve" required maxlength="60">
+        <button type="submit">Létrehozás</button>
       </form>
       <ul id="deck-list" class="deck-list"></ul>
     </section>
 
-    <!-- Egy pakli részletei -->
     <section id="view-deck" hidden>
-      <div class="deck-head">
-        <div>
-          <button id="back-btn" class="ghost small">Vissza</button>
-          <h2 id="deck-title"></h2>
-          <p id="deck-stats" class="muted"></p>
-        </div>
-        <div class="deck-head-actions">
-          <button id="study-btn">Tanulás</button>
-          <button id="delete-deck-btn" class="danger small">Pakli törlése</button>
-        </div>
-      </div>
-
+      <button id="back-btn" class="ghost small">‹ Vissza</button>
+      <h1 id="deck-title" class="title"></h1>
+      <p id="deck-stats" class="muted"></p>
+      <button id="study-btn" class="big">Tanulás</button>
       <form id="card-form" class="card-form">
         <label>Előlap <textarea id="card-front" rows="2" required></textarea></label>
         <label>Hátlap <textarea id="card-back" rows="2" required></textarea></label>
         <button type="submit">Kártya hozzáadása</button>
       </form>
-
       <ul id="card-list" class="card-list"></ul>
+      <button id="delete-deck-btn" class="danger small">Pakli törlése</button>
     </section>
 
-    <!-- Tanulás -->
     <section id="view-study" hidden>
       <div class="study-bar">
         <button id="exit-study-btn" class="ghost small">Kilépés</button>
@@ -65,7 +47,7 @@
         <p id="card-text"></p>
       </div>
       <div id="show-wrap" class="answer-row">
-        <button id="show-btn">Válasz mutatása <kbd>Szóköz</kbd></button>
+        <button id="show-btn" class="big">Válasz mutatása <kbd>Szóköz</kbd></button>
       </div>
       <div id="rate-wrap" class="answer-row rate" hidden>
         <button data-rating="again" class="r-again">Újra <small id="t-again"></small></button>
@@ -75,11 +57,51 @@
       </div>
       <p id="study-done" class="done" hidden>Mára végeztél ebben a pakliban.</p>
     </section>
+
+    <!-- Játékok fül -->
+    <section id="view-games" hidden>
+      <h1 class="title">Játékok</h1>
+      <label class="select-label">Pakli <select id="games-deck"></select></label>
+      <p id="games-msg" class="err" role="alert"></p>
+      <ul id="game-list" class="game-list"></ul>
+    </section>
+
+    <section id="view-game" hidden>
+      <div class="study-bar">
+        <button id="exit-game-btn" class="ghost small">Kilépés</button>
+        <strong id="game-title"></strong>
+        <span id="game-score" class="muted"></span>
+      </div>
+      <div id="game-area"></div>
+    </section>
+
+    <!-- Beállítások fül -->
+    <section id="view-settings" hidden>
+      <h1 class="title">Beállítások</h1>
+      <ul class="settings-list">
+        <li><span>Szinkron</span><span id="sync-status" class="muted" role="status"></span></li>
+        <li><button id="settings-btn" class="ghost">Adatbázis beállítása</button></li>
+        <li><label>Kiejtés nyelve (hallgatós kvíz)
+          <select id="lang-select">
+            <option value="en-US">Angol (US)</option><option value="en-GB">Angol (UK)</option>
+            <option value="de-DE">Német</option><option value="es-ES">Spanyol</option>
+            <option value="fr-FR">Francia</option><option value="it-IT">Olasz</option>
+          </select></label></li>
+        <li><button id="export-btn" class="ghost">Exportálás (JSON)</button></li>
+        <li><label class="ghost btn-like">Importálás<input type="file" id="import-input" accept="application/json" hidden></label></li>
+      </ul>
+    </section>
   </main>
+
+  <nav class="tabbar" aria-label="Fő navigáció">
+    <button data-tab="decks" class="active"><span class="ic">🃏</span>Kártyák</button>
+    <button data-tab="games"><span class="ic">🎮</span>Játékok</button>
+    <button data-tab="settings"><span class="ic">⚙️</span>Beállítások</button>
+  </nav>
 
   <dialog id="settings-dialog">
     <h2>Supabase kapcsolat</h2>
-    <p class="muted">A kulcs csak ebben a böngészőben tárolódik, nem kerül a repóba.</p>
+    <p class="muted">A kulcs csak ebben a böngészőben tárolódik.</p>
     <label>Project URL <input id="cfg-url" placeholder="https://xxxx.supabase.co"></label>
     <label>Anon / publishable kulcs <input id="cfg-key" autocomplete="off"></label>
     <p id="cfg-error" class="err" role="alert"></p>
@@ -91,5 +113,6 @@
 
   <script src="config.js"></script>
   <script src="app.js"></script>
+  <script src="games.js"></script>
 </body>
 </html>
