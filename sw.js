@@ -1,6 +1,6 @@
-// Egyszerű offline gyorsítótár az alkalmazás fájljaihoz (az adatok a Supabase-ből / localStorage-ból jönnek)
-const CACHE = "kartyatar-v3";
-const FILES = ["./", "index.html", "style.css", "app.js", "games.js", "config.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+// Simple offline cache for the app files (data comes from Supabase / localStorage)
+const CACHE = "flashcards-v5";
+const FILES = ["./", "index.html", "style.css", "app.js", "games.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
@@ -12,7 +12,7 @@ self.addEventListener("activate", (e) => {
   );
   self.clients.claim();
 });
-// Hálózat először (hogy a frissítések megjelenjenek), offline esetén a gyorsítótár
+// Network first (so updates show up), cache when offline
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
