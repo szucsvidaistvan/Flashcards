@@ -1,5 +1,4 @@
 "use strict";
-
 /* ---------- Storage (localStorage) ---------- */
 const STORAGE_KEY = "kartyatar-v1";
 const DAY = 24 * 60 * 60 * 1000;
