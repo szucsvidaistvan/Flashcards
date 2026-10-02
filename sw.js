@@ -1,6 +1,6 @@
 // Simple offline cache for the app files (data comes from Supabase / localStorage)
-const CACHE = "flashcards-v5";
-const FILES = ["./", "index.html", "style.css", "app.js", "games.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"];
+const CACHE = "flashcards-v8";
+const FILES = ["./", "index.html", "style.css", "app.js", "games.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
