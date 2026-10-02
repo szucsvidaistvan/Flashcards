@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Flashcards">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-180.png">
   <title>Flashcards</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -55,6 +55,7 @@
       <div class="study-bar">
         <button id="exit-study-btn" class="ghost small">Exit</button>
         <span id="study-progress" class="muted"></span>
+        <button id="play-btn" class="ghost small" aria-label="Play audio" hidden>🔊</button>
       </div>
       <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Flip card">
         <p id="card-text"></p>
@@ -101,8 +102,9 @@
             <option value="de-DE">German</option><option value="es-ES">Spanish</option>
             <option value="fr-FR">French</option><option value="it-IT">Italian</option>
           </select></label></li>
+        <li><label class="row">Autoplay audio <input type="checkbox" id="autoplay" checked></label></li>
         <li><button id="export-btn" class="ghost">Export (JSON)</button></li>
-        <li><label class="ghost btn-like">Import<input type="file" id="import-input" accept="application/json" hidden></label></li>
+        <li><label class="ghost btn-like">Import (JSON or Anki .apkg)<input type="file" id="import-input" accept=".json,.apkg,application/json" hidden></label></li>
       </ul>
     </section>
   </main>
@@ -113,8 +115,20 @@
     <button data-tab="settings"><span class="ic">⚙️</span>Settings</button>
   </nav>
 
+  <dialog id="apkg-dialog">
+    <h2>Import Anki deck</h2>
+    <p id="apkg-msg" class="muted"></p>
+    <button id="apkg-all" class="ghost small" type="button">Select all / none</button>
+    <div id="apkg-list" class="apkg-list"></div>
+    <div class="dialog-actions">
+      <button id="apkg-cancel" class="ghost" type="button">Close</button>
+      <button id="apkg-import" type="button" disabled>Import</button>
+    </div>
+  </dialog>
+
   <script src="app.js"></script>
   <script src="games.js"></script>
+  <script src="audio.js"></script>
+  <script src="anki.js"></script>
 </body>
 </html>
-

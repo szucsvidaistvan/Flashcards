@@ -96,11 +96,17 @@ const setStatus = (t) => ($("sync-status").textContent = t);
 const toRow = (c, deckId) => ({
   id: c.id, deck_id: deckId, front: c.front, back: c.back,
   ease: c.ease, interval_days: c.interval, reps: c.reps, due: c.due,
+  ...(c.aq || c.aa ? { audio: { q: c.aq || [], a: c.aa || [] } } : {}),
 });
-const fromRow = (r) => ({
+const fromRow = (r) => withAudio(r, {
   id: r.id, front: r.front, back: r.back,
   ease: r.ease, interval: r.interval_days, reps: r.reps, due: Number(r.due),
 });
+function withAudio(r, card) {
+  if (r.audio?.q?.length) card.aq = r.audio.q;
+  if (r.audio?.a?.length) card.aa = r.audio.a;
+  return card;
+}
 
 async function api(path, method = "GET", body) {
   await ensureToken();
@@ -276,8 +282,14 @@ function renderDeck(id) {
 
   const list = $("card-list");
   list.innerHTML = "";
+  if (d.cards.length > 200) {
+    const more = document.createElement("li");
+    more.className = "empty";
+    more.textContent = `Showing the first 200 of ${d.cards.length} cards`;
+    setTimeout(() => list.append(more));
+  }
   if (!d.cards.length) list.innerHTML = '<li class="empty">Add your first card above.</li>';
-  for (const c of d.cards) {
+  for (const c of d.cards.slice(0, 200)) {
     const li = document.createElement("li");
     const a = document.createElement("span");
     const b = document.createElement("span");
@@ -318,6 +330,7 @@ function nextCard() {
     current = null;
     $("flashcard").hidden = $("show-wrap").hidden = $("rate-wrap").hidden = true;
     $("study-progress").textContent = "";
+    $("play-btn").hidden = true;
     $("study-done").hidden = false;
     return;
   }
@@ -328,9 +341,14 @@ function nextCard() {
   $("show-wrap").hidden = false;
   $("rate-wrap").hidden = true;
   $("study-progress").textContent = `${queue.length} cards left`;
+  $("play-btn").hidden = !(current.aq || current.aa);
+  playAudio(current.aq);
+  const nx = queue[1];
+  if (nx) audioPrefetch([...(nx.aq || []), ...(nx.aa || [])]);   // download the next card's audio ahead of time
 }
 function reveal() {
   if (!current || !$("rate-wrap").hidden) return;
+  playAudio(current.aa);
   $("flashcard").classList.add("back");
   $("card-text").textContent = current.back;
   $("show-wrap").hidden = true;
@@ -348,7 +366,12 @@ function rate(rating) {
 
 /* ---------- Events ---------- */
 $("back-btn").addEventListener("click", renderDecks);
-$("exit-study-btn").addEventListener("click", () => renderDeck(currentDeckId));
+$("exit-study-btn").addEventListener("click", () => { playAudio(); renderDeck(currentDeckId); });
+$("play-btn").addEventListener("click", () => {
+  if (!current) return;
+  const back = $("flashcard").classList.contains("back");
+  playAudio(back && current.aa?.length ? current.aa : current.aq, true);
+});
 
 $("deck-form").addEventListener("submit", (e) => {
   e.preventDefault();
@@ -407,6 +430,10 @@ $("export-btn").addEventListener("click", () => {
 $("import-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  if (/\.apkg$/i.test(file.name)) {
+    e.target.value = "";
+    return openApkg(file);
+  }
   try {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.decks)) throw new Error();
@@ -453,3 +480,7 @@ saveSession(session);
 if (session) { renderDecks(); syncInit(); } else showLogin();
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+
+// Autoplay setting (Settings tab)
+$("autoplay").checked = localStorage.getItem("flashcards-autoplay") !== "off";
+$("autoplay").addEventListener("change", (e) => localStorage.setItem("flashcards-autoplay", e.target.checked ? "on" : "off"));
