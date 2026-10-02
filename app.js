@@ -19,7 +19,13 @@ function load() {
   }
 }
 function save() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Browser storage is full (very large collections): keep only the sync queue.
+    // The decks are downloaded from Supabase on the next start.
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks: [], pending: state.pending })); } catch {}
+  }
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const $ = (id) => document.getElementById(id);
@@ -126,19 +132,25 @@ async function flush() {
   try {
     while (state.pending.length) {
       const op = state.pending[0];
-      const eid = encodeURIComponent(op.id);
-      if (op.type === "deck") {
-        const d = deckById(op.id);
-        if (d) await api("decks?on_conflict=id", "POST", { id: d.id, name: d.name });
-      } else if (op.type === "card") {
-        for (const d of state.decks) {
-          const c = d.cards.find((x) => x.id === op.id);
-          if (c) { await api("cards?on_conflict=id", "POST", toRow(c, d.id)); break; }
+      if (op.type === "deck" || op.type === "card") {
+        // Send consecutive upserts in one request (up to 500 rows) – much faster for big imports
+        let n = 0;
+        while (n < state.pending.length && n < 500 && state.pending[n].type === op.type) n++;
+        const ids = new Set(state.pending.slice(0, n).map((o) => o.id));
+        const rows = [];
+        if (op.type === "deck") {
+          for (const d of state.decks) if (ids.has(d.id)) rows.push({ id: d.id, name: d.name });
+        } else {
+          for (const d of state.decks) for (const c of d.cards) if (ids.has(c.id)) rows.push(toRow(c, d.id));
         }
-      } else if (op.type === "delDeck") await api("decks?id=eq." + eid, "DELETE");
-      else await api("cards?id=eq." + eid, "DELETE");
-      state.pending.shift();
+        if (rows.length) await api((op.type === "deck" ? "decks" : "cards") + "?on_conflict=id", "POST", rows);
+        state.pending.splice(0, n);
+      } else {
+        await api((op.type === "delDeck" ? "decks" : "cards") + "?id=eq." + encodeURIComponent(op.id), "DELETE");
+        state.pending.shift();
+      }
       save();
+      setStatus(`Syncing… (${state.pending.length} left)`);
     }
     setStatus("Synced");
   } catch (e) {
@@ -398,14 +410,28 @@ $("import-input").addEventListener("change", async (e) => {
   try {
     const data = JSON.parse(await file.text());
     if (!Array.isArray(data.decks)) throw new Error();
-    if (confirm("This will overwrite your current decks. Continue?")) {
-      state = { decks: data.decks, pending: [] };
-      for (const d of state.decks) state.pending.push({ type: "deck", id: d.id });
-      for (const d of state.decks) for (const c of d.cards) state.pending.push({ type: "card", id: c.id });
-      save();
-      flush();
-      renderDecks();
+    // Merge: new decks are added, existing decks only get their missing cards
+    let added = 0;
+    for (const nd of data.decks) {
+      if (!nd.id || !nd.name || !Array.isArray(nd.cards)) continue;
+      let deck = deckById(nd.id);
+      if (!deck) {
+        deck = { id: nd.id, name: nd.name, cards: [] };
+        state.decks.push(deck);
+        state.pending.push({ type: "deck", id: deck.id });
+      }
+      const have = new Set(deck.cards.map((c) => c.id));
+      for (const c of nd.cards) {
+        if (!c.id || have.has(c.id) || !c.front || !c.back) continue;
+        deck.cards.push({ ease: 2.5, interval: 0, reps: 0, due: 0, ...c });
+        state.pending.push({ type: "card", id: c.id });
+        added++;
+      }
     }
+    save();
+    flush();
+    renderDecks();
+    alert(`Imported ${added} new cards.`);
   } catch {
     alert("This file is not a valid backup.");
   }
