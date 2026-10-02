@@ -74,31 +74,63 @@ function cloze(text, ord, hide) {
   return text.replace(/\{\{c(\d+)::([\s\S]*?)(?:::[\s\S]*?)?\}\}/g, (m, n, t) => (hide && +n - 1 === ord ? "[…]" : t));
 }
 
-// One Anki card -> { front, back, aq, aa }  (aq/aa = audio files for the question / answer)
+const IPA_CHARS = /[\u0250-\u02FF\u0300-\u036F\u1D00-\u1DBF]/;   // IPA letters, modifiers, combining marks
+const LEAD_ARTICLE = /^(?:\S{1,3}\s+|\S{1,2}['’])/;               // "la ", "les ", "l'"
+const norm = (t) => t.normalize("NFC").trim().toLowerCase();
+
+// One Anki card -> { front, back, ipa?, aq?, aa? }
+//   aq / aa = audio files of the question / answer side
+//   ipa     = pronunciation and grammar notes, shown only when the learner asks for them
 function makeCard(model, flds, ord) {
   const vals = flds.split("\x1f");
   const f = {};
   model.flds.forEach((fl, i) => (f[fl.name] = vals[i] || ""));
-  let qh, ah;
-  if (model.type === 1) {
-    const text = f.Text ?? vals[0];
-    qh = cloze(text, ord, true);
-    ah = cloze(text, ord, false) + "<br>" + (f["Back Extra"] ?? f.Extra ?? "");
-  } else {
+
+  const render = (fields) => {
+    if (model.type === 1) {
+      const text = fields.Text ?? vals[0];
+      return { qh: cloze(text, ord, true), ah: cloze(text, ord, false) + "<br>" + (fields["Back Extra"] ?? fields.Extra ?? "") };
+    }
     const t = model.tmpls.find((x) => x.ord === ord) || model.tmpls[0];
-    qh = renderTpl(t.qfmt, f, "");
-    ah = renderTpl(t.afmt, f, qh);
+    const qh = renderTpl(t.qfmt, fields, "");
+    let ah = renderTpl(t.afmt, fields, qh);
     const parts = ah.split(/<hr\s+id=["']?answer["']?\s*\/?>/i);
     if (parts.length > 1) ah = parts.pop();
-  }
+    return { qh, ah };
+  };
+  // Answer lines, without the lines that only repeat the question
+  const answerLines = (aText, qText) => {
+    const qLines = new Set(qText.split("\n"));
+    const kept = aText.split("\n").filter((l) => !qLines.has(l));
+    return kept.length ? kept : aText.split("\n");
+  };
+
+  const { qh, ah } = render(f);
   const q = toText(qh), a = toText(ah);
-  // If the answer template repeats the question, drop the repeated lines
-  const qLines = new Set(q.text.split("\n"));
-  const trimmed = a.text.split("\n").filter((l) => !qLines.has(l)).join("\n");
-  if (trimmed) a.text = trimmed;
-  const card = { front: q.text || (q.sounds.length ? "🔊" : ""), back: a.text || "(see front)" };
+  const card = { front: q.text || (q.sounds.length ? "🔊" : ""), back: answerLines(a.text, q.text).join("\n") || "(see front)" };
   if (q.sounds.length) card.aq = q.sounds;
   if (a.sounds.length) card.aa = a.sounds;
+
+  // Word cards with an IPA field: keep only the word / meaning on the back, move the pronunciation away
+  const ipaNames = model.flds.map((x) => x.name).filter((n) => /ipa|pronunc|phonet/i.test(n) && toText(f[n] || "", 1e6).text);
+  if (ipaNames.length && model.type !== 1) {
+    const ipaTexts = ipaNames.map((n) => toText(f[n], 1e6).text);
+    if (!ipaTexts.some((t) => q.text.includes(t))) {
+      const f2 = { ...f };
+      ipaNames.forEach((n) => (f2[n] = ""));
+      const notes = [];
+      const lines = answerLines(toText(render(f2).ah).text, q.text)
+        .map((l) => l.replace(/\[([^\]]*)\]/g, (m, inner) => (IPA_CHARS.test(inner) ? m : (notes.push(m), ""))).replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+      const qn = norm(q.text);
+      const rest = lines.filter((l) => norm(l) !== qn && norm(l.replace(LEAD_ARTICLE, "")) !== qn);
+      if (rest.length) {
+        card.back = rest.join("\n");
+        const extra = [...ipaTexts, ...notes].filter(Boolean).join("\n");
+        if (extra) card.ipa = extra;
+      }
+    }
+  }
   return card;
 }
 
@@ -167,7 +199,7 @@ if (typeof document !== "undefined") {
     btn.disabled = true;
     try {
       const needed = new Set();
-      let added = 0;
+      let added = 0, updated = 0;
       for (const did of ids) {
         const info = pkg.decks[did];
         const deckId = "ak-" + hash(info.name);
@@ -180,16 +212,23 @@ if (typeof document !== "undefined") {
           deck.name = info.name;   // older imports used shortened names
           state.pending.push({ type: "deck", id: deckId });
         }
-        const have = new Set(deck.cards.map((c) => c.id));
+        const byId = new Map(deck.cards.map((c) => [c.id, c]));
         const st = pkg.db.prepare("select c.id, c.ord, n.mid, n.flds from cards c join notes n on n.id = c.nid where c.did = ? order by c.due, c.id");
         st.bind([+did]);
         while (st.step()) {
           const r = st.getAsObject(), id = "ak-" + r.id;
-          if (have.has(id)) continue;
           const model = pkg.models[r.mid];
           if (!model) continue;
           const c = makeCard(model, r.flds, r.ord);
           if (!c.front || !c.back) continue;
+          const old = byId.get(id);
+          if (old) {   // re-import: refresh the text and audio, keep the learning progress
+            for (const key of ["aq", "aa", "ipa"]) delete old[key];
+            Object.assign(old, c);
+            state.pending.push({ type: "card", id });
+            updated++;
+            continue;
+          }
           [...(c.aq || []), ...(c.aa || [])].forEach((n) => needed.add(n));
           deck.cards.push({ id, ease: 2.5, interval: 0, reps: 0, due: 0, ...c });
           state.pending.push({ type: "card", id });
@@ -215,7 +254,7 @@ if (typeof document !== "undefined") {
       save();
       flush();
       renderDecks();
-      msg.textContent = `Done: ${added} cards, ${names.length} audio files. The audio uploads in the background – keep the app open until the Settings tab shows "Synced".`;
+      msg.textContent = `Done: ${added} new and ${updated} updated cards, ${names.length} audio files. The audio uploads in the background – keep the app open until the Settings tab shows "Synced".`;
       pkg = null;
       uploadPending();
       setTimeout(() => $("apkg-dialog").close(), 3500);

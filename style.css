@@ -129,3 +129,9 @@ dialog label { margin-top: .9rem; }
 .pager { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin: 1rem 0; }
 .row input[type=number] { width: 90px; height: auto; text-align: center; }
 #browse-back { margin-bottom: .25rem; }
+
+.flashcard { align-content: center; gap: .9rem; }
+.ipa { font: .95rem/1.5 var(--sans); color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+#study-progress { flex: 1; text-align: center; }
+#play-btn { margin-left: 0; }
+.counts { color: var(--muted); font-size: .9rem; }

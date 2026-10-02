@@ -9,6 +9,16 @@ function h(tag, cls, text) {
   if (text != null) e.textContent = text;
   return e;
 }
+// Real audio from the imported Anki cards sounds much better than the browser voice
+const cardAudio = (c) => (c.aq?.length ? c.aq : c.aa?.length ? c.aa : null);
+function playCardAudio(c) {
+  const a = cardAudio(c);
+  if (a) playAudio(a.slice(0, 1), true);
+}
+function speakCard(c) {
+  if (cardAudio(c)) playCardAudio(c);
+  else speak(c.front);   // no recording: fall back to the browser voice
+}
 const setScore = (t) => ($("game-score").textContent = t);
 function speak(text) {
   if (!("speechSynthesis" in window)) return;
@@ -32,6 +42,7 @@ function finish(title, detail, again) {
 /* 1) Match */
 function playMatch(cards, again) {
   const set = shuffle(cards).slice(0, 6);
+  const byId = new Map(set.map((c) => [c.id, c]));
   let sel = null, left = set.length, wrong = 0;
   area.innerHTML = "";
   setScore("");
@@ -50,6 +61,7 @@ function playMatch(cards, again) {
       b.classList.add("sel");
     } else if (sel.dataset.id === b.dataset.id) {
       for (const x of [sel, b]) { x.classList.remove("sel"); x.classList.add("ok"); x.disabled = true; }
+      playCardAudio(byId.get(b.dataset.id));
       sel = null;
       if (--left === 0) setTimeout(() => finish("Done!", `${wrong} mistake${wrong === 1 ? "" : "s"}`, again), 500);
     } else {
@@ -64,7 +76,10 @@ function playMatch(cards, again) {
 
 /* 2) Quiz and 3) Audio quiz */
 function playQuiz(cards, audio, again) {
-  const qs = shuffle(cards).slice(0, 10);
+  // audio quiz: prefer cards that have a real recording
+  const withAudio = cards.filter(cardAudio);
+  const pool = audio && withAudio.length >= 4 ? withAudio : cards;
+  const qs = shuffle(pool).slice(0, 10);
   let i = 0, score = 0;
   const next = () => {
     if (i >= qs.length) return finish("Result", `${score} / ${qs.length} correct`, again);
@@ -76,16 +91,16 @@ function playQuiz(cards, audio, again) {
       q.classList.add("audio");
       q.setAttribute("role", "button");
       q.setAttribute("aria-label", "Play the word");
-      q.onclick = () => speak(c.front);
-      speak(c.front);
+      q.onclick = () => speakCard(c);
+      speakCard(c);
     }
     const opts = h("div", "options");
-    const wrongs = shuffle(cards.filter((x) => x.id !== c.id && x.back !== c.back)).slice(0, 3);
+    const wrongs = shuffle(pool.filter((x) => x.id !== c.id && x.back !== c.back)).slice(0, 3);
     shuffle([c, ...wrongs]).forEach((o) => {
       const b = h("button", "opt", o.back);
       b.onclick = () => {
         opts.querySelectorAll("button").forEach((x) => (x.disabled = true));
-        if (o.id === c.id) { b.classList.add("ok"); score++; }
+        if (o.id === c.id) { b.classList.add("ok"); score++; if (!audio) playCardAudio(c); }
         else {
           b.classList.add("bad");
           [...opts.children].find((x) => x.textContent === c.back)?.classList.add("ok");
@@ -133,7 +148,7 @@ function playAnagram(cards, again) {
       if (picked.length !== target.length) return;
       const ok = picked.map((p) => p.ch).join("").toLowerCase() === target.join("").toLowerCase();
       slots.classList.add(ok ? "ok" : "bad");
-      if (ok) { score++; i++; setTimeout(next, 800); }
+      if (ok) { score++; i++; playCardAudio(c); setTimeout(next, 1200); }
       else setTimeout(() => { slots.classList.remove("bad"); picked.splice(0).forEach((p) => (p.used = false)); draw(); }, 700);
     };
     const skip = h("button", "ghost", "Skip");
@@ -162,6 +177,7 @@ function playType(cards, again) {
       done = true;
       const ok = inp.value.trim().toLowerCase() === c.front.trim().toLowerCase();
       if (ok) score++;
+      playCardAudio(c);
       fb.textContent = ok ? "Correct!" : "Correct answer: " + c.front;
       fb.className = "feedback " + (ok ? "ok" : "bad");
       inp.disabled = true;

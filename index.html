@@ -65,9 +65,11 @@
         <button id="exit-study-btn" class="ghost small">Exit</button>
         <span id="study-progress" class="muted"></span>
         <button id="play-btn" class="ghost small" aria-label="Play audio" hidden>🔊</button>
+        <button id="ipa-btn" class="ghost small" hidden>Pronunciation</button>
       </div>
       <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Flip card">
         <p id="card-text"></p>
+        <p id="ipa-text" class="ipa" hidden></p>
       </div>
       <div id="show-wrap" class="answer-row">
         <button id="show-btn" class="big">Show answer <kbd>Space</kbd></button>
@@ -78,7 +80,8 @@
         <button data-rating="good" class="r-good">Good <small id="t-good"></small></button>
         <button data-rating="easy" class="r-easy">Easy <small id="t-easy"></small></button>
       </div>
-      <p id="study-done" class="done" hidden>You're done with this deck for today.</p>
+      <p id="study-done" class="done" hidden></p>
+      <div id="more-wrap" class="answer-row" hidden><button id="more-btn" class="big">Study more</button></div>
     </section>
 
     <!-- Games tab -->
@@ -111,7 +114,7 @@
             <option value="de-DE">German</option><option value="es-ES">Spanish</option>
             <option value="fr-FR">French</option><option value="it-IT">Italian</option>
           </select></label></li>
-        <li><label class="row">New cards per day <input type="number" id="new-per-day" min="0" max="1000"></label></li>
+        <li><label class="row">Cards per study session <input type="number" id="session-size" min="1" max="500"></label></li>
         <li><label class="row">Autoplay audio <input type="checkbox" id="autoplay" checked></label></li>
         <li><button id="export-btn" class="ghost">Export (JSON)</button></li>
         <li><label class="ghost btn-like">Import (JSON or Anki .apkg)<input type="file" id="import-input" hidden></label></li>

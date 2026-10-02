@@ -39,20 +39,11 @@ const shortName = (name) => name.split(SEP).slice(-2).join(" › ");
 const parentPath = (p) => p.split(SEP).slice(0, -1).join(SEP);
 const decksUnder = (path) => (path === "" ? state.decks : state.decks.filter((d) => d.name === path || d.name.startsWith(path + SEP)));
 
-// New cards per day (like Anki), counted on this device
-const todayKey = () => new Date().toLocaleDateString("en-CA");
-function newLimit() {
-  const v = localStorage.getItem("flashcards-newperday");
-  return v === null ? 20 : Math.max(0, +v || 0);
+// How many cards one press of "Study" gives you (Settings)
+function sessionSize() {
+  const v = localStorage.getItem("flashcards-session");
+  return v === null ? 20 : Math.max(1, +v || 20);
 }
-function newDoneToday() {
-  try {
-    const o = JSON.parse(localStorage.getItem("flashcards-newtoday"));
-    return o?.date === todayKey() ? o.n : 0;
-  } catch { return 0; }
-}
-const addNewDone = () => localStorage.setItem("flashcards-newtoday", JSON.stringify({ date: todayKey(), n: newDoneToday() + 1 }));
-const newLeft = () => Math.max(0, newLimit() - newDoneToday());
 
 let browsePath = "";   // folder shown in the Cards tab
 let studyFrom = null;  // where "Exit" returns to
@@ -123,7 +114,8 @@ const setStatus = (t) => ($("sync-status").textContent = t);
 const toRow = (c, deckId) => ({
   id: c.id, deck_id: deckId, front: c.front, back: c.back,
   ease: c.ease, interval_days: c.interval, reps: c.reps, due: c.due,
-  ...(c.aq || c.aa ? { audio: { q: c.aq || [], a: c.aa || [] } } : {}),
+  // the jsonb column "audio" also carries the pronunciation text (ipa)
+  ...(c.aq || c.aa || c.ipa ? { audio: { q: c.aq || [], a: c.aa || [], ipa: c.ipa || "" } } : {}),
 });
 const fromRow = (r) => withAudio(r, {
   id: r.id, front: r.front, back: r.back,
@@ -132,6 +124,7 @@ const fromRow = (r) => withAudio(r, {
 function withAudio(r, card) {
   if (r.audio?.q?.length) card.aq = r.audio.q;
   if (r.audio?.a?.length) card.aa = r.audio.a;
+  if (r.audio?.ipa) card.ipa = r.audio.ipa;
   return card;
 }
 
@@ -287,14 +280,8 @@ function show(view) {
   document.body.classList.toggle("immersive", view === "study" || view === "game" || view === "login");
   window.scrollTo(0, 0);
 }
-function counts(decks) {
-  let total = 0, n = 0, due = 0;
-  for (const d of decks) for (const c of d.cards) { total++; if (isNew(c)) n++; else if (isDue(c)) due++; }
-  return { total, n: Math.min(n, newLeft()), due };
-}
-function countsHtml(c) {
-  return `<span class="counts"><span class="c-new">${c.n} new</span><span class="c-due">${c.due} due</span></span>`;
-}
+const cardCount = (decks) => decks.reduce((n, d) => n + d.cards.length, 0);
+const countsHtml = (n) => `<span class="counts">${n} ${n === 1 ? "card" : "cards"}</span>`;
 
 // Cards tab: shows the folders / decks inside browsePath, like the Anki deck list
 function renderDecks(path = browsePath) {
@@ -306,10 +293,8 @@ function renderDecks(path = browsePath) {
   $("browse-back").hidden = !inside;
   $("decks-title").textContent = inside ? lastSeg(path) : "Cards";
   $("browse-path").textContent = path.split(SEP).join(" › ");
-  const c = counts(decksUnder(path));
   $("folder-study").hidden = !inside;
-  $("folder-study").textContent = `Study everything in this folder (${c.n} new · ${c.due} due)`;
-  $("folder-study").disabled = c.n + c.due === 0;
+  $("folder-study").textContent = "Study this folder";
 
   const list = $("deck-list");
   list.innerHTML = "";
@@ -333,10 +318,10 @@ function renderDecks(path = browsePath) {
     li.addEventListener("keydown", (e) => e.key === "Enter" && open());
     list.append(li);
   };
-  if (own) addRow("Cards in this deck", counts([own]), false, () => renderDeck(own.id));
+  if (own) addRow("Cards in this deck", cardCount([own]), false, () => renderDeck(own.id));
   [...kids.values()].sort((x, y) => natural(x.seg, y.seg)).forEach((k) => {
     const open = k.folder ? () => renderDecks(k.path) : () => renderDeck(k.deck.id);
-    addRow(k.seg, counts(decksUnder(k.path)), k.folder, open);
+    addRow(k.seg, cardCount(decksUnder(k.path)), k.folder, open);
   });
   if (!list.children.length) list.innerHTML = '<li class="empty">No decks yet. Create your first one above.</li>';
 }
@@ -347,14 +332,12 @@ function renderDeck(id, page = 0) {
   show("deck");
   $("deck-title").textContent = lastSeg(d.name);
   $("deck-path").textContent = parentPath(d.name).split(SEP).join(" › ");
-  const c = counts([d]);
-  $("study-btn").disabled = c.n + c.due === 0;
 
   const pages = Math.max(1, Math.ceil(d.cards.length / PAGE));
   const cardPage = Math.min(page, pages - 1);
   const from = cardPage * PAGE;
   const slice = d.cards.slice(from, from + PAGE);
-  $("deck-stats").textContent = `${c.total} cards · ${c.n} new today · ${c.due} due`;
+  $("deck-stats").textContent = `${d.cards.length} cards`;
   $("pager").hidden = d.cards.length <= PAGE;
   $("pager-info").textContent = `${from + 1}–${from + slice.length} of ${d.cards.length}`;
   $("page-prev").disabled = cardPage === 0;
@@ -379,36 +362,43 @@ function renderDeck(id, page = 0) {
       enqueue("delCard", card.id);
       renderDeck(id, cardPage);
     });
-    const tag = document.createElement("span");
-    tag.className = "due-tag";
-    tag.textContent = isNew(card) ? "New" : isDue(card) ? "Due" : "Next: " + new Date(card.due).toLocaleDateString("en-US");
-    li.append(a, b, del, tag);
+    li.append(a, b, del);
     list.append(li);
   }
 }
 
 /* ---------- Study ---------- */
+let lastScope = [], studySize = 0;
+// "Study" works any time: due cards first, then new cards, then the ones due soonest (review ahead)
 function startStudy(scope, from) {
   studyFrom = from;
-  const due = [], fresh = [];
+  lastScope = scope;
+  const due = [], fresh = [], ahead = [];
   for (const d of [...scope].sort((x, y) => natural(x.name, y.name)))
     for (const c of d.cards) {
       if (isNew(c)) fresh.push(c);
       else if (isDue(c)) due.push(c);
+      else ahead.push(c);
     }
   due.sort((x, y) => x.due - y.due);
-  queue = [...due, ...fresh.slice(0, newLeft())];   // daily new-card limit (Settings)
+  ahead.sort((x, y) => x.due - y.due);
+  queue = [...due, ...fresh, ...ahead].slice(0, sessionSize());
+  studySize = queue.length;
   show("study");
   nextCard();
 }
 function nextCard() {
   $("study-done").hidden = true;
+  $("more-wrap").hidden = true;
+  $("ipa-text").hidden = true;
   if (!queue.length) {
     current = null;
     $("flashcard").hidden = $("show-wrap").hidden = $("rate-wrap").hidden = true;
     $("study-progress").textContent = "";
-    $("play-btn").hidden = true;
+    $("play-btn").hidden = $("ipa-btn").hidden = true;
+    $("study-done").textContent = studySize ? "Session complete!" : "This deck has no cards yet.";
     $("study-done").hidden = false;
+    $("more-wrap").hidden = !studySize;
     return;
   }
   current = queue[0];
@@ -419,6 +409,8 @@ function nextCard() {
   $("rate-wrap").hidden = true;
   $("study-progress").textContent = `${queue.length} cards left`;
   $("play-btn").hidden = !(current.aq || current.aa);
+  $("ipa-btn").hidden = !current.ipa;
+  $("ipa-text").textContent = current.ipa || "";
   playAudio(current.aq);
   const nx = queue[1];
   if (nx) audioPrefetch([...(nx.aq || []), ...(nx.aa || [])]);   // download the next card's audio ahead of time
@@ -434,7 +426,6 @@ function reveal() {
 }
 function rate(rating) {
   if (!current || $("rate-wrap").hidden) return;
-  if (isNew(current)) addNewDone();
   Object.assign(current, schedule(current, rating));
   queue.shift();
   if (rating === "again") queue.push(current); // show again in this session
@@ -451,6 +442,8 @@ $("exit-study-btn").addEventListener("click", () => {
   if (studyFrom?.deck && deckById(studyFrom.deck)) renderDeck(studyFrom.deck);
   else renderDecks(studyFrom?.folder ?? browsePath);
 });
+$("ipa-btn").addEventListener("click", () => ($("ipa-text").hidden = !$("ipa-text").hidden));
+$("more-btn").addEventListener("click", () => startStudy(lastScope, studyFrom));
 $("play-btn").addEventListener("click", () => {
   if (!current) return;
   const back = $("flashcard").classList.contains("back");
@@ -569,9 +562,9 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catc
 $("autoplay").checked = localStorage.getItem("flashcards-autoplay") !== "off";
 $("autoplay").addEventListener("change", (e) => localStorage.setItem("flashcards-autoplay", e.target.checked ? "on" : "off"));
 
-// New cards per day (Settings)
-$("new-per-day").value = newLimit();
-$("new-per-day").addEventListener("change", (e) => {
-  localStorage.setItem("flashcards-newperday", Math.max(0, +e.target.value || 0));
-  e.target.value = newLimit();
+// Cards per study session (Settings)
+$("session-size").value = sessionSize();
+$("session-size").addEventListener("change", (e) => {
+  localStorage.setItem("flashcards-session", Math.max(1, +e.target.value || 20));
+  e.target.value = sessionSize();
 });
