@@ -135,3 +135,15 @@ dialog label { margin-top: .9rem; }
 #study-progress { flex: 1; text-align: center; }
 #play-btn { margin-left: 0; }
 .counts { color: var(--muted); font-size: .9rem; }
+
+html, body { touch-action: pan-x pan-y; }   /* no pinch / double-tap zoom */
+.face { display: grid; justify-items: center; gap: .9rem; width: 100%; }
+.face .plain { margin: 0; }
+.w-word { font: 700 2.6rem/1.1 var(--serif); overflow-wrap: anywhere; }
+.w-ipa { font: 1.35rem/1.3 "Charis SIL", "Doulos SIL", "Segoe UI", system-ui, sans-serif; color: var(--muted); }
+.w-play { width: 56px; height: 56px; min-height: 0; padding: 0; border-radius: 50%; font-size: 1.3rem; background: var(--accent); }
+.w-line { width: 40%; border: 0; border-top: 1px solid var(--line); margin: .2rem 0; }
+.w-mean { display: flex; align-items: baseline; justify-content: center; gap: .5rem; flex-wrap: wrap; }
+.w-pos { font: italic 1.05rem var(--serif); color: var(--muted); }
+.w-text { font: 700 1.9rem/1.2 var(--serif); overflow-wrap: anywhere; }
+.w-notes { font: .85rem/1.5 var(--sans); color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }

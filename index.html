@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#0b0b0f">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -68,8 +68,7 @@
         <button id="ipa-btn" class="ghost small" hidden>Pronunciation</button>
       </div>
       <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Flip card">
-        <p id="card-text"></p>
-        <p id="ipa-text" class="ipa" hidden></p>
+        <div id="card-face" class="face"></div>
       </div>
       <div id="show-wrap" class="answer-row">
         <button id="show-btn" class="big">Show answer <kbd>Space</kbd></button>
@@ -115,6 +114,7 @@
             <option value="fr-FR">French</option><option value="it-IT">Italian</option>
           </select></label></li>
         <li><label class="row">Cards per study session <input type="number" id="session-size" min="1" max="500"></label></li>
+        <li><label class="row">Show pronunciation on the answer <input type="checkbox" id="auto-ipa" checked></label></li>
         <li><label class="row">Autoplay audio <input type="checkbox" id="autoplay" checked></label></li>
         <li><button id="export-btn" class="ghost">Export (JSON)</button></li>
         <li><label class="ghost btn-like">Import (JSON or Anki .apkg)<input type="file" id="import-input" hidden></label></li>

@@ -387,10 +387,60 @@ function startStudy(scope, from) {
   show("study");
   nextCard();
 }
+/* ---------- Card faces ---------- */
+let ipaShown = false;
+const autoIpa = () => localStorage.getItem("flashcards-autoipa") !== "off";
+const POS = /^[a-z]{1,8}\.(\s|$)/i;   // part-of-speech tag at the start: "n.", "adj.", "pro."
+const splitPos = (t) => { const m = t.match(/^([a-z]{1,8}\.)\s+([\s\S]+)$/i); return m ? { pos: m[1], text: m[2] } : { pos: "", text: t }; };
+
+// A "word card" has a pronunciation, and one side is the meaning (starts with a part-of-speech tag)
+function wordInfo(c) {
+  if (!c.ipa) return null;
+  if (POS.test(c.back)) return { word: c.front, meaning: c.back, frontIsWord: true };
+  if (POS.test(c.front)) return { word: c.back, meaning: c.front, frontIsWord: false };
+  return null;
+}
+const audioFor = (c, side) => (side === "back" && c.aa?.length ? c.aa : c.aq);
+
+function renderFace(side) {
+  const face = $("card-face"), c = current, w = wordInfo(c);
+  face.innerHTML = "";
+  if (!w) {
+    face.append(h("p", "plain", side === "front" ? c.front : c.back));
+    if (ipaShown && c.ipa) face.append(h("div", "w-notes", c.ipa));
+    return;
+  }
+  const [ipaLine, ...notes] = c.ipa.split("\n");
+  const showWord = side === "back" || w.frontIsWord;
+  const showMeaning = side === "back" || !w.frontIsWord;
+  if (showWord) {
+    face.append(h("div", "w-word", w.word));
+    if (ipaShown) face.append(h("div", "w-ipa", ipaLine));
+  }
+  if (side === "back" && (c.aq || c.aa)) {
+    const p = h("button", "w-play", "▶");
+    p.setAttribute("aria-label", "Play audio");
+    p.onclick = (e) => { e.stopPropagation(); playAudio(audioFor(c, side), true); };
+    face.append(p);
+  }
+  if (showWord && showMeaning) face.append(h("hr", "w-line"));
+  if (showMeaning) {
+    const { pos, text } = splitPos(w.meaning), row = h("div", "w-mean");
+    if (pos) row.append(h("span", "w-pos", pos));
+    row.append(h("span", "w-text", text));
+    face.append(row);
+  }
+  if (ipaShown && side === "back" && notes.length) face.append(h("div", "w-notes", notes.join("\n")));
+}
+function updateIpaBtn() {
+  const b = $("ipa-btn");
+  b.hidden = !current?.ipa;
+  b.textContent = ipaShown ? "Hide" : "Pronunciation";
+}
+
 function nextCard() {
   $("study-done").hidden = true;
   $("more-wrap").hidden = true;
-  $("ipa-text").hidden = true;
   if (!queue.length) {
     current = null;
     $("flashcard").hidden = $("show-wrap").hidden = $("rate-wrap").hidden = true;
@@ -402,15 +452,15 @@ function nextCard() {
     return;
   }
   current = queue[0];
+  ipaShown = false;
   $("flashcard").hidden = false;
   $("flashcard").classList.remove("back");
-  $("card-text").textContent = current.front;
+  renderFace("front");
   $("show-wrap").hidden = false;
   $("rate-wrap").hidden = true;
-  $("study-progress").textContent = `${queue.length} cards left`;
+  $("study-progress").textContent = `${queue.length} left`;
   $("play-btn").hidden = !(current.aq || current.aa);
-  $("ipa-btn").hidden = !current.ipa;
-  $("ipa-text").textContent = current.ipa || "";
+  updateIpaBtn();
   playAudio(current.aq);
   const nx = queue[1];
   if (nx) audioPrefetch([...(nx.aq || []), ...(nx.aa || [])]);   // download the next card's audio ahead of time
@@ -419,7 +469,10 @@ function reveal() {
   if (!current || !$("rate-wrap").hidden) return;
   playAudio(current.aa);
   $("flashcard").classList.add("back");
-  $("card-text").textContent = current.back;
+  ipaShown = ipaShown || autoIpa();
+  renderFace("back");
+  updateIpaBtn();
+  if (wordInfo(current)) $("play-btn").hidden = true;   // the word layout has its own play button
   $("show-wrap").hidden = true;
   $("rate-wrap").hidden = false;
   for (const r of ["again", "hard", "good", "easy"]) $("t-" + r).textContent = label(current, r);
@@ -442,7 +495,12 @@ $("exit-study-btn").addEventListener("click", () => {
   if (studyFrom?.deck && deckById(studyFrom.deck)) renderDeck(studyFrom.deck);
   else renderDecks(studyFrom?.folder ?? browsePath);
 });
-$("ipa-btn").addEventListener("click", () => ($("ipa-text").hidden = !$("ipa-text").hidden));
+$("ipa-btn").addEventListener("click", () => {
+  if (!current) return;
+  ipaShown = !ipaShown;
+  renderFace($("flashcard").classList.contains("back") ? "back" : "front");
+  updateIpaBtn();
+});
 $("more-btn").addEventListener("click", () => startStudy(lastScope, studyFrom));
 $("play-btn").addEventListener("click", () => {
   if (!current) return;
@@ -568,3 +626,11 @@ $("session-size").addEventListener("change", (e) => {
   localStorage.setItem("flashcards-session", Math.max(1, +e.target.value || 20));
   e.target.value = sessionSize();
 });
+
+// Pronunciation on the answer (Settings)
+$("auto-ipa").checked = autoIpa();
+$("auto-ipa").addEventListener("change", (e) => localStorage.setItem("flashcards-autoipa", e.target.checked ? "on" : "off"));
+
+// No pinch or double-tap zoom: the app should feel native
+["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
+document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
