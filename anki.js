@@ -173,8 +173,11 @@ if (typeof document !== "undefined") {
         const deckId = "ak-" + hash(info.name);
         let deck = deckById(deckId);
         if (!deck) {
-          deck = { id: deckId, name: info.label.slice(0, 60), cards: [] };
+          deck = { id: deckId, name: info.name, cards: [] };
           state.decks.push(deck);
+          state.pending.push({ type: "deck", id: deckId });
+        } else if (deck.name !== info.name) {
+          deck.name = info.name;   // older imports used shortened names
           state.pending.push({ type: "deck", id: deckId });
         }
         const have = new Set(deck.cards.map((c) => c.id));

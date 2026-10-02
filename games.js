@@ -204,7 +204,7 @@ function renderGames() {
   show("games");
   const sel = $("games-deck");
   sel.innerHTML = "";
-  state.decks.forEach((d) => { const o = h("option", null, `${d.name} (${d.cards.length})`); o.value = d.id; sel.append(o); });
+  [...state.decks].sort((x, y) => natural(x.name, y.name)).forEach((d) => { const o = h("option", null, `${shortName(d.name)} (${d.cards.length})`); o.value = d.id; sel.append(o); });
   if (!deckById(gDeckId)) gDeckId = state.decks[0]?.id;
   sel.value = gDeckId || "";
   $("games-msg").textContent = state.decks.length ? "" : "Create a deck first in the Cards tab.";

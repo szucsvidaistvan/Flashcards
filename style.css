@@ -119,3 +119,13 @@ dialog label { margin-top: .9rem; }
 .row { display: flex; justify-content: space-between; align-items: center; color: var(--ink); font-size: 1rem; }
 .row input { width: 24px; height: 24px; }
 #play-btn { margin-left: auto; }
+
+.center { text-align: center; }
+.chev { color: var(--muted); font-size: 1.6rem; margin-left: .6rem; line-height: 1; }
+.deck-list li .deck-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.counts { white-space: nowrap; }
+.card-list li span { white-space: pre-line; overflow-wrap: anywhere; }
+.card-list li span:nth-child(2) { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pager { display: flex; justify-content: space-between; align-items: center; gap: .5rem; margin: 1rem 0; }
+.row input[type=number] { width: 90px; height: auto; text-align: center; }
+#browse-back { margin-bottom: .25rem; }
