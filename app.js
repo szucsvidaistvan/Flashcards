@@ -430,7 +430,7 @@ $("export-btn").addEventListener("click", () => {
 $("import-input").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   if (!file) return;
-  if (/\.apkg$/i.test(file.name)) {
+  if (/\.(apkg|zip)$/i.test(file.name)) {
     e.target.value = "";
     return openApkg(file);
   }

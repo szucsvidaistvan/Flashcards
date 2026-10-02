@@ -1,5 +1,5 @@
 // Simple offline cache for the app files (data comes from Supabase / localStorage)
-const CACHE = "flashcards-v10";
+const CACHE = "flashcards-v11";
 const FILES = ["./", "index.html", "style.css", "app.js", "games.js", "audio.js", "anki.js", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
 self.addEventListener("install", (e) => {
