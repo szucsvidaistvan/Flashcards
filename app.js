@@ -10,6 +10,7 @@ state.pending ||= []; // operations not yet synced
 let currentDeckId = null;
 let queue = [];
 let current = null;
+let editingCardId = null;
 
 function load() {
   try {
@@ -283,11 +284,39 @@ function show(view) {
 const cardCount = (decks) => decks.reduce((n, d) => n + d.cards.length, 0);
 const countsHtml = (n) => `<span class="counts">${n} ${n === 1 ? "card" : "cards"}</span>`;
 
+function cardMatchesQuery(card, query) {
+  if (!query) return true;
+  return [card.front, card.back, card.ipa || ""].some((value) => String(value).toLowerCase().includes(query));
+}
+
+function setCardFormMode(card = null) {
+  const form = $("card-form");
+  const title = $("card-form-title");
+  const cancel = $("card-cancel-edit");
+  const submit = $("card-submit-btn");
+  if (!card) {
+    editingCardId = null;
+    form.reset();
+    title.textContent = "Add card";
+    cancel.hidden = true;
+    submit.textContent = "Add card";
+    return;
+  }
+  editingCardId = card.id;
+  $("card-edit-id").value = card.id;
+  $("card-front").value = card.front;
+  $("card-back").value = card.back;
+  title.textContent = "Edit card";
+  cancel.hidden = false;
+  submit.textContent = "Save changes";
+}
+
 // Cards tab: shows the folders / decks inside browsePath, like the Anki deck list
 function renderDecks(path = browsePath) {
   while (path && !decksUnder(path).length) path = parentPath(path);   // folder disappeared
   browsePath = path;
   currentDeckId = null;
+  setCardFormMode();
   show("decks");
   const inside = path !== "";
   $("browse-back").hidden = !inside;
@@ -333,13 +362,15 @@ function renderDeck(id, page = 0) {
   $("deck-title").textContent = lastSeg(d.name);
   $("deck-path").textContent = parentPath(d.name).split(SEP).join(" › ");
 
-  const pages = Math.max(1, Math.ceil(d.cards.length / PAGE));
+  const search = $("deck-search")?.value.trim().toLowerCase() || "";
+  const filtered = d.cards.filter((card) => cardMatchesQuery(card, search));
+  const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const cardPage = Math.min(page, pages - 1);
   const from = cardPage * PAGE;
-  const slice = d.cards.slice(from, from + PAGE);
-  $("deck-stats").textContent = `${d.cards.length} cards`;
-  $("pager").hidden = d.cards.length <= PAGE;
-  $("pager-info").textContent = `${from + 1}–${from + slice.length} of ${d.cards.length}`;
+  const slice = filtered.slice(from, from + PAGE);
+  $("deck-stats").textContent = `${filtered.length} / ${d.cards.length} cards`;
+  $("pager").hidden = filtered.length <= PAGE;
+  $("pager-info").textContent = filtered.length ? `${from + 1}–${from + slice.length} of ${filtered.length}` : "0 cards";
   $("page-prev").disabled = cardPage === 0;
   $("page-next").disabled = cardPage >= pages - 1;
   $("page-prev").onclick = () => renderDeck(id, cardPage - 1);
@@ -347,22 +378,37 @@ function renderDeck(id, page = 0) {
 
   const list = $("card-list");
   list.innerHTML = "";
-  if (!d.cards.length) list.innerHTML = '<li class="empty">Add your first card above.</li>';
+  if (!filtered.length) list.innerHTML = '<li class="empty">No cards match this search.</li>';
   for (const card of slice) {
     const li = document.createElement("li");
+    li.className = "card-row";
     const a = document.createElement("span");
     const b = document.createElement("span");
     a.textContent = card.front;
     b.textContent = card.back;
+    const audioBtn = document.createElement("button");
+    audioBtn.type = "button";
+    audioBtn.className = "small ghost card-audio";
+    audioBtn.textContent = "🔊";
+    audioBtn.title = "Play audio";
+    audioBtn.hidden = !(card.aq || card.aa);
+    audioBtn.addEventListener("click", (e) => { e.stopPropagation(); playAudio(card.aq?.length ? card.aq : card.aa, true); });
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "small ghost";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (e) => { e.stopPropagation(); setCardFormMode(card); });
     const del = document.createElement("button");
+    del.type = "button";
     del.className = "danger small";
     del.textContent = "Delete";
-    del.addEventListener("click", () => {
+    del.addEventListener("click", (e) => {
+      e.stopPropagation();
       d.cards = d.cards.filter((x) => x.id !== card.id);
       enqueue("delCard", card.id);
       renderDeck(id, cardPage);
     });
-    li.append(a, b, del);
+    li.append(a, b, audioBtn, editBtn, del);
     list.append(li);
   }
 }
@@ -389,7 +435,7 @@ function startStudy(scope, from) {
 }
 /* ---------- Card faces ---------- */
 let ipaShown = false;
-const autoIpa = () => localStorage.getItem("flashcards-autoipa") !== "off";
+const autoIpa = () => false;
 const POS = /^[a-z]{1,8}\.(\s|$)/i;   // part-of-speech tag at the start: "n.", "adj.", "pro."
 const splitPos = (t) => { const m = t.match(/^([a-z]{1,8}\.)\s+([\s\S]+)$/i); return m ? { pos: m[1], text: m[2] } : { pos: "", text: t }; };
 
@@ -469,16 +515,20 @@ function reveal() {
   if (!current || !$("rate-wrap").hidden) return;
   playAudio(current.aa);
   $("flashcard").classList.add("back");
-  ipaShown = ipaShown || autoIpa();
   renderFace("back");
   updateIpaBtn();
   if (wordInfo(current)) $("play-btn").hidden = true;   // the word layout has its own play button
   $("show-wrap").hidden = true;
   $("rate-wrap").hidden = false;
-  for (const r of ["again", "hard", "good", "easy"]) $("t-" + r).textContent = label(current, r);
 }
 function rate(rating) {
   if (!current || $("rate-wrap").hidden) return;
+  if (rating === "next") {
+    queue.shift();
+    enqueue("card", current.id);
+    nextCard();
+    return;
+  }
   Object.assign(current, schedule(current, rating));
   queue.shift();
   if (rating === "again") queue.push(current); // show again in this session
@@ -508,6 +558,13 @@ $("play-btn").addEventListener("click", () => {
   playAudio(back && current.aa?.length ? current.aa : current.aq, true);
 });
 
+$("deck-search").addEventListener("input", () => {
+  if (currentDeckId) renderDeck(currentDeckId, 0);
+});
+$("deck-search-clear").addEventListener("click", () => {
+  $("deck-search").value = "";
+  if (currentDeckId) renderDeck(currentDeckId, 0);
+});
 $("deck-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const name = $("deck-name").value.trim();
@@ -522,14 +579,27 @@ $("card-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const front = $("card-front").value.trim();
   const back = $("card-back").value.trim();
-  if (!front || !back) return;
+  if (!front || !back || !currentDeckId) return;
+  const deck = deckById(currentDeckId);
+  if (!deck) return;
+  if (editingCardId) {
+    const card = deck.cards.find((c) => c.id === editingCardId);
+    if (!card) return;
+    card.front = front;
+    card.back = back;
+    enqueue("card", card.id);
+    setCardFormMode();
+    renderDeck(currentDeckId, 0);
+    return;
+  }
   const nc = newCard(front, back);
-  deckById(currentDeckId).cards.push(nc);
+  deck.cards.push(nc);
   enqueue("card", nc.id);
   e.target.reset();
   renderDeck(currentDeckId, 1e9);   // jump to the last page, where the new card is
   $("card-front").focus();
 });
+$("card-cancel-edit").addEventListener("click", () => setCardFormMode());
 $("delete-deck-btn").addEventListener("click", () => {
   const d = deckById(currentDeckId);
   if (confirm(`Delete the deck "${d.name}"?`)) {
@@ -545,13 +615,14 @@ document.querySelectorAll("[data-rating]").forEach((b) =>
   b.addEventListener("click", () => rate(b.dataset.rating))
 );
 
-// Shortcuts: Space = show answer, 1–4 = rate
-document.addEventListener("keydown", (e) => {
-  if ($("view-study").hidden || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
-  if (e.code === "Space") { e.preventDefault(); reveal(); }
-  const map = { 1: "again", 2: "hard", 3: "good", 4: "easy" };
-  if (map[e.key]) rate(map[e.key]);
-});
+// Shortcuts: Space = show answer, Enter = next, 1–4 = rate
+ document.addEventListener("keydown", (e) => {
+   if ($("view-study").hidden || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+   if (e.code === "Space") { e.preventDefault(); reveal(); }
+   if (e.code === "Enter" && !$("rate-wrap").hidden) { e.preventDefault(); rate("next"); }
+   const map = { 1: "again", 2: "hard", 3: "good", 4: "easy" };
+   if (map[e.key]) rate(map[e.key]);
+ });
 
 /* ---------- Export / import ---------- */
 $("export-btn").addEventListener("click", () => {
@@ -627,10 +698,611 @@ $("session-size").addEventListener("change", (e) => {
   e.target.value = sessionSize();
 });
 
-// Pronunciation on the answer (Settings)
-$("auto-ipa").checked = autoIpa();
-$("auto-ipa").addEventListener("change", (e) => localStorage.setItem("flashcards-autoipa", e.target.checked ? "on" : "off"));
-
 // No pinch or double-tap zoom: the app should feel native
 ["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
 document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
