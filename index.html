@@ -52,6 +52,7 @@
         <label>Back <textarea id="card-back" rows="2" required></textarea></label>
         <button type="submit">Add card</button>
       </form>
+      <input id="card-search" type="search" placeholder="Search in this deck…" autocomplete="off" enterkeyhint="search">
       <ul id="card-list" class="card-list"></ul>
       <div id="pager" class="pager" hidden>
         <button id="page-prev" class="ghost small">‹ Prev</button>
@@ -63,6 +64,7 @@
     <section id="view-study" hidden>
       <div class="study-bar">
         <button id="exit-study-btn" class="ghost small">Exit</button>
+        <button id="shuffle-btn" class="ghost small" aria-label="Shuffle" hidden>🔀</button>
         <span id="study-progress" class="muted"></span>
         <button id="play-btn" class="ghost small" aria-label="Play audio" hidden>🔊</button>
         <button id="ipa-btn" class="ghost small" hidden>Pronunciation</button>
@@ -78,6 +80,11 @@
         <button data-rating="hard" class="r-hard">Hard <small id="t-hard"></small></button>
         <button data-rating="good" class="r-good">Good <small id="t-good"></small></button>
         <button data-rating="easy" class="r-easy">Easy <small id="t-easy"></small></button>
+      </div>
+      <div id="nav-wrap" class="answer-row nav" hidden>
+        <button id="prev-btn" class="ghost">‹ Previous</button>
+        <button id="toggle-btn" class="big">Show answer</button>
+        <button id="next-btn" class="ghost">Next ›</button>
       </div>
       <p id="study-done" class="done" hidden></p>
       <div id="more-wrap" class="answer-row" hidden><button id="more-btn" class="big">Study more</button></div>
@@ -113,6 +120,7 @@
             <option value="de-DE">German</option><option value="es-ES">Spanish</option>
             <option value="fr-FR">French</option><option value="it-IT">Italian</option>
           </select></label></li>
+        <li><label class="row">Study mode <select id="study-mode"><option value="simple">Simple (Previous / Next)</option><option value="spaced">Spaced repetition</option></select></label></li>
         <li><label class="row">Cards per study session <input type="number" id="session-size" min="1" max="500"></label></li>
         <li><label class="row">Show pronunciation on the answer <input type="checkbox" id="auto-ipa" checked></label></li>
         <li><label class="row">Autoplay audio <input type="checkbox" id="autoplay" checked></label></li>
@@ -139,6 +147,7 @@
     </div>
   </dialog>
 
+  <script src="store.js"></script>
   <script src="app.js"></script>
   <script src="games.js"></script>
   <script src="audio.js"></script>
