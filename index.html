@@ -72,22 +72,7 @@
       <div id="flashcard" class="flashcard" tabindex="0" role="button" aria-label="Flip card">
         <div id="card-face" class="face"></div>
       </div>
-      <div id="show-wrap" class="answer-row">
-        <button id="show-btn" class="big">Show answer <kbd>Space</kbd></button>
-      </div>
-      <div id="rate-wrap" class="answer-row rate" hidden>
-        <button data-rating="again" class="r-again">Again <small id="t-again"></small></button>
-        <button data-rating="hard" class="r-hard">Hard <small id="t-hard"></small></button>
-        <button data-rating="good" class="r-good">Good <small id="t-good"></small></button>
-        <button data-rating="easy" class="r-easy">Easy <small id="t-easy"></small></button>
-      </div>
-      <div id="nav-wrap" class="answer-row nav" hidden>
-        <button id="prev-btn" class="ghost">‹ Previous</button>
-        <button id="toggle-btn" class="big">Show answer</button>
-        <button id="next-btn" class="ghost">Next ›</button>
-      </div>
       <p id="study-done" class="done" hidden></p>
-      <div id="more-wrap" class="answer-row" hidden><button id="more-btn" class="big">Study more</button></div>
     </section>
 
     <!-- Games tab -->
@@ -114,12 +99,6 @@
         <li><span>Sync</span><span id="sync-status" class="muted" role="status"></span></li>
         <li><span>Account</span><span id="account-email" class="muted"></span></li>
         <li><button id="logout-btn" class="ghost">Sign out</button></li>
-        <li><label>Pronunciation language (audio quiz)
-          <select id="lang-select">
-            <option value="en-US">English (US)</option><option value="en-GB">English (UK)</option>
-            <option value="de-DE">German</option><option value="es-ES">Spanish</option>
-            <option value="fr-FR">French</option><option value="it-IT">Italian</option>
-          </select></label></li>
         <li><label class="row">Study mode <select id="study-mode"><option value="simple">Simple (Previous / Next)</option><option value="spaced">Spaced repetition</option></select></label></li>
         <li><label class="row">Cards per study session <input type="number" id="session-size" min="1" max="500"></label></li>
         <li><label class="row">Show pronunciation on the answer <input type="checkbox" id="auto-ipa" checked></label></li>
@@ -129,6 +108,24 @@
       </ul>
     </section>
   </main>
+
+  <footer id="study-footer" hidden>
+    <div id="show-wrap" class="answer-row">
+        <button id="show-btn" class="big">Show answer <kbd>Space</kbd></button>
+      </div>
+    <div id="rate-wrap" class="answer-row rate" hidden>
+        <button data-rating="again" class="r-again">Again <small id="t-again"></small></button>
+        <button data-rating="hard" class="r-hard">Hard <small id="t-hard"></small></button>
+        <button data-rating="good" class="r-good">Good <small id="t-good"></small></button>
+        <button data-rating="easy" class="r-easy">Easy <small id="t-easy"></small></button>
+      </div>
+    <div id="nav-wrap" class="answer-row nav" hidden>
+        <button id="prev-btn" class="ghost">‹ Previous</button>
+        <button id="toggle-btn" class="big">Show answer</button>
+        <button id="next-btn" class="ghost">Next ›</button>
+      </div>
+    <div id="more-wrap" class="answer-row" hidden><button id="more-btn" class="big">Study more</button></div>
+  </footer>
 
   <nav class="tabbar" aria-label="Main navigation">
     <button data-tab="decks" class="active"><span class="ic">🃏</span>Cards</button>
