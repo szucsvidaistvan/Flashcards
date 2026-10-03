@@ -41,13 +41,20 @@ function toText(html, maxLen = 800) {
   s = removeBlocks(s, /<(div|span|table|section)\b[^>]*(display\s*:\s*none|visibility\s*:\s*hidden|onmouse(over|enter))[^>]*>/i);
   for (const id of hiddenIds) s = removeBlocks(s, new RegExp(`<(div|span|table|section)\\b[^>]*\\bid=["']${id}["'][^>]*>`, "i"));
   const sounds = [];
+  const images = [];   // <img src="file.jpg"> -> file names (the files are stored like the audio)
+  s = s.replace(/<img\b[^>]*?\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>/gi, (m, a, b, c) => {
+    let n = decode(a || b || c);
+    try { n = decodeURIComponent(n); } catch {}
+    if (!/^(https?:|data:)/i.test(n) && !images.includes(n)) images.push(n);
+    return "";
+  });
   s = s.replace(/\[sound:([^\]]+)\]/g, (m, n) => { if (!sounds.includes(n)) sounds.push(n); return ""; });
   s = s.replace(/<(?:br|p|div|\/div|\/p|\/tr|\/h\d|\/li)(?=[\s>\/])[^>]*>/gi, "\n").replace(/<\/t[hd]>/gi, " | ").replace(/<[^>]+>/g, "");
   s = s.replace(/\[audio\]/gi, "");
   const lines = decode(s).replace(/\u00a0/g, " ").split("\n").map((l) => l.replace(/[ \t]+/g, " ").trim().replace(/\|$/, "").trim());
   let text = lines.filter(Boolean).join("\n");
   if (text.length > maxLen) text = text.slice(0, maxLen).trimEnd() + "…";
-  return { text, sounds };
+  return { text, sounds, images };
 }
 
 // Mustache-like Anki templates: {{Field}}, {{FrontSide}}, {{#Field}}..{{/Field}}, {{^Field}}..{{/Field}}
@@ -107,9 +114,12 @@ function makeCard(model, flds, ord) {
 
   const { qh, ah } = render(f);
   const q = toText(qh), a = toText(ah);
-  const card = { front: q.text || (q.sounds.length ? "🔊" : ""), back: answerLines(a.text, q.text).join("\n") || "(see front)" };
+  const card = { front: q.text || (q.sounds.length ? "🔊" : q.images.length ? "🖼" : ""), back: answerLines(a.text, q.text).join("\n") || "(see front)" };
   if (q.sounds.length) card.aq = q.sounds;
   if (a.sounds.length) card.aa = a.sounds;
+  if (q.images.length) card.qi = q.images;
+  const ai = a.images.filter((n) => !q.images.includes(n));
+  if (ai.length) card.ai = ai;
 
   // Word cards with an IPA field: keep only the word / meaning on the back, move the pronunciation away
   const ipaNames = model.flds.map((x) => x.name).filter((n) => /ipa|pronunc|phonet/i.test(n) && toText(f[n] || "", 1e6).text);
@@ -145,8 +155,19 @@ if (typeof document !== "undefined") {
     document.head.append(s);
   });
   const hash = (str) => { let h = 5381; for (const c of str) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h.toString(36); };
-  const MIME = { mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/mp4", flac: "audio/flac", opus: "audio/ogg" };
+  const MIME = { mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav", m4a: "audio/mp4", aac: "audio/mp4", flac: "audio/flac", opus: "audio/ogg", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", bmp: "image/bmp", avif: "image/avif" };
   let pkg = null;
+
+  // Learning progress stored in the package (only present if the deck was exported "with scheduling information")
+  //   type: 0 new, 1 learning, 2 review, 3 relearning;  due: day number (review) or epoch seconds (learning)
+  //   ivl: interval in days;  factor: ease in permille (2500 = 250 %)
+  function ankiSchedule(r, crt) {
+    if (r.type === 0) return {};
+    const ease = r.factor > 0 ? Math.max(1.3, r.factor / 1000) : 2.5;
+    if (r.type === 1 || r.ivl <= 0) return { ease, interval: 0, reps: 0, due: Date.now() };   // still learning: due now
+    const dueMs = r.due > 1e8 ? r.due * 1000 : (crt + r.due * 86400) * 1000;
+    return { ease, interval: r.ivl, reps: Math.max(1, r.reps), due: dueMs };
+  }
 
   async function readApkg(file) {
     if (!window.JSZip) await loadScript(LIB.jszip);
@@ -161,8 +182,11 @@ if (typeof document !== "undefined") {
     const [models, decks] = db.exec("select models, decks from col")[0].values[0].map(JSON.parse);
     const media = zip.file("media") ? JSON.parse(await zip.file("media").async("string")) : {};
     const counts = {};
-    db.exec("select did, count(*) from cards group by did")[0]?.values.forEach(([d, n]) => (counts[d] = n));
-    return { zip, db, models, decks, media, counts };
+    // cards sitting in a filtered deck (odid) belong to their original deck; suspended cards (queue -1) are skipped
+    db.exec("select case when odid > 0 then odid else did end as d, count(*) from cards where queue <> -1 group by d")[0]
+      ?.values.forEach(([d, n]) => (counts[d] = n));
+    const crt = db.exec("select crt from col")[0].values[0][0];   // collection creation time (epoch seconds)
+    return { zip, db, models, decks, media, counts, crt };
   }
 
   async function openApkg(file) {
@@ -171,7 +195,7 @@ if (typeof document !== "undefined") {
     $("apkg-dialog").showModal();
     try {
       pkg = await readApkg(file);
-      const ds = Object.values(pkg.decks).filter((d) => pkg.counts[d.id]).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      const ds = Object.values(pkg.decks).filter((d) => pkg.counts[d.id] && !d.dyn).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       const first = new Set(ds.map((d) => d.name.split("::")[0]));
       for (const d of ds) {
         const segs = d.name.split("::");
@@ -213,7 +237,7 @@ if (typeof document !== "undefined") {
           state.pending.push({ type: "deck", id: deckId });
         }
         const byId = new Map(deck.cards.map((c) => [c.id, c]));
-        const st = pkg.db.prepare("select c.id, c.ord, n.mid, n.flds from cards c join notes n on n.id = c.nid where c.did = ? order by c.due, c.id");
+        const st = pkg.db.prepare("select c.id, c.ord, c.type, c.queue, c.due, c.ivl, c.factor, c.reps, n.mid, n.flds from cards c join notes n on n.id = c.nid where (case when c.odid > 0 then c.odid else c.did end) = ? and c.queue <> -1 order by c.due, c.id");
         st.bind([+did]);
         while (st.step()) {
           const r = st.getAsObject(), id = "ak-" + r.id;
@@ -229,8 +253,8 @@ if (typeof document !== "undefined") {
             updated++;
             continue;
           }
-          [...(c.aq || []), ...(c.aa || [])].forEach((n) => needed.add(n));
-          deck.cards.push({ id, ease: 2.5, interval: 0, reps: 0, due: 0, ...c });
+          [...(c.aq || []), ...(c.aa || []), ...(c.qi || []), ...(c.ai || [])].forEach((n) => needed.add(n));
+          deck.cards.push({ id, ease: 2.5, interval: 0, reps: 0, due: 0, ...c, ...ankiSchedule(r, pkg.crt) });
           state.pending.push({ type: "card", id });
           added++;
         }
@@ -245,7 +269,7 @@ if (typeof document !== "undefined") {
       for (let i = 0; i < names.length; i += 40) {
         const batch = await Promise.all(names.slice(i, i + 40).map(async (n) => {
           const buf = await pkg.zip.file(rev[n]).async("arraybuffer");
-          return [n, new Blob([buf], { type: MIME[n.split(".").pop().toLowerCase()] || "audio/mpeg" })];
+          return [n, new Blob([buf], { type: MIME[n.split(".").pop().toLowerCase()] || "application/octet-stream" })];
         }));
         await audioPutMany(batch);
         await audioPutMany(batch.map(([n]) => [n, 1]), "queue"); // to be uploaded to Supabase Storage
