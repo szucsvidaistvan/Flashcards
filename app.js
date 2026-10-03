@@ -127,7 +127,7 @@ const toRow = (c, deckId) => ({
   id: c.id, deck_id: deckId, front: c.front, back: c.back,
   ease: c.ease, interval_days: c.interval, reps: c.reps, due: c.due,
   // the jsonb column "audio" also carries the pronunciation text (ipa)
-  ...(c.aq || c.aa || c.ipa ? { audio: { q: c.aq || [], a: c.aa || [], ipa: c.ipa || "" } } : {}),
+  ...(c.aq || c.aa || c.ipa || c.qi || c.ai ? { audio: { q: c.aq || [], a: c.aa || [], ipa: c.ipa || "", qi: c.qi || [], ai: c.ai || [] } } : {}),
 });
 const fromRow = (r) => withAudio(r, {
   id: r.id, front: r.front, back: r.back,
@@ -137,6 +137,8 @@ function withAudio(r, card) {
   if (r.audio?.q?.length) card.aq = r.audio.q;
   if (r.audio?.a?.length) card.aa = r.audio.a;
   if (r.audio?.ipa) card.ipa = r.audio.ipa;
+  if (r.audio?.qi?.length) card.qi = r.audio.qi;
+  if (r.audio?.ai?.length) card.ai = r.audio.ai;
   return card;
 }
 
@@ -346,7 +348,8 @@ function show(view) {
   const tab = { decks: "decks", deck: "decks", games: "games", settings: "settings" }[view];
   document.querySelectorAll(".tabbar button").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
   document.body.classList.toggle("immersive", view === "study" || view === "game" || view === "login");
-  window.scrollTo(0, 0);
+  document.querySelector("main").scrollTo(0, 0);
+  $("study-footer").hidden = view !== "study";
 }
 const cardCount = (decks) => decks.reduce((n, d) => n + d.cards.length, 0);
 const countsHtml = (n) => `<span class="counts">${n} ${n === 1 ? "card" : "cards"}</span>`;
@@ -537,13 +540,32 @@ function fmt(el, text) {
   return el;
 }
 
+// Pictures from imported decks (stored like the audio: on this device and in Supabase Storage)
+function addImages(face, names) {
+  for (const n of names || []) {
+    const img = h("img", "card-img");
+    img.alt = "";
+    audioGet(n).then((blob) => {
+      if (!blob) return img.remove();
+      img.src = URL.createObjectURL(blob);
+      img.onload = () => URL.revokeObjectURL(img.src);
+    });
+    face.append(img);
+  }
+}
+
 function renderFace(side) {
   const face = $("card-face"), c = current, w = wordInfo(c);
   face.innerHTML = "";
+  const imgs = side === "front" ? c.qi : [...new Set([...(c.qi || []), ...(c.ai || [])])];
   if (!w) {
-    const p = h("p", "plain");
-    fmt(p, side === "front" ? c.front : c.back);
-    face.append(p);
+    addImages(face, imgs);
+    const text = side === "front" ? c.front : c.back;
+    if (!(imgs?.length && text === "🖼")) {
+      const p = h("p", "plain");
+      fmt(p, text);
+      face.append(p);
+    }
     if (ipaShown && c.ipa) face.append(h("div", "w-notes", c.ipa));
     return;
   }
@@ -567,6 +589,7 @@ function renderFace(side) {
     row.append(h("span", "w-text", text));
     face.append(row);
   }
+  addImages(face, imgs);
   if (ipaShown && side === "back" && notes.length) face.append(h("div", "w-notes", notes.join("\n")));
 }
 function updateIpaBtn() {
@@ -596,7 +619,7 @@ function nextCard() {
   $("show-wrap").hidden = false;
   $("rate-wrap").hidden = true;
   $("study-progress").textContent = `${queue.length} left`;
-  $("play-btn").hidden = !(current.aq || current.aa);
+  $("play-btn").hidden = current.front !== "🔊";   // only audio-only fronts need a speaker
   updateIpaBtn();
   playAudio(current.aq);
   const nx = queue[1];
@@ -610,7 +633,7 @@ function reveal() {
   ipaShown = ipaShown || autoIpa();
   renderFace("back");
   updateIpaBtn();
-  if (wordInfo(current)) $("play-btn").hidden = true;   // the word layout has its own play button
+  $("play-btn").hidden = !(current.aq || current.aa) || !!wordInfo(current);   // word cards have their own play button
   $("show-wrap").hidden = true;
   $("rate-wrap").hidden = false;
   for (const r of ["again", "hard", "good", "easy"]) $("t-" + r).textContent = label(current, r);
@@ -654,7 +677,7 @@ function setSide(back) {
   renderFace(back ? "back" : "front");
   updateIpaBtn();
   $("toggle-btn").textContent = back ? "Hide answer" : "Show answer";
-  $("play-btn").hidden = !(current.aq || current.aa) || (back && !!wordInfo(current));
+  $("play-btn").hidden = back ? !(current.aq || current.aa) || !!wordInfo(current) : current.front !== "🔊";
   playAudio(back ? current.aa : current.aq);
 }
 function step(d) {
