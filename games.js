@@ -11,18 +11,8 @@ function playCardAudio(c) {
   const a = cardAudio(c);
   if (a) playAudio(a.slice(0, 1), true);
 }
-function speakCard(c) {
-  if (cardAudio(c)) playCardAudio(c);
-  else speak(pair(c).word);   // no recording: fall back to the browser voice
-}
+const speakCard = playCardAudio;
 const setScore = (t) => ($("game-score").textContent = t);
-function speak(text) {
-  if (!("speechSynthesis" in window)) return;
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = localStorage.getItem("kartyatar-lang") || "en-US";
-  speechSynthesis.speak(u);
-}
 function finish(title, detail, again) {
   area.innerHTML = "";
   const box = h("div", "result");
@@ -73,8 +63,7 @@ function playMatch(cards, again) {
 /* 2) Quiz and 3) Audio quiz */
 function playQuiz(cards, audio, again) {
   // audio quiz: prefer cards that have a real recording
-  const withAudio = cards.filter(cardAudio);
-  const pool = audio && withAudio.length >= 4 ? withAudio : cards;
+  const pool = audio ? cards.filter(cardAudio) : cards;
   const qs = shuffle(pool).slice(0, 10);
   let i = 0, score = 0;
   const next = () => {
@@ -193,21 +182,29 @@ function playType(cards, again) {
 const GAMES = [
   { icon: "🧩", color: "#e0a21b", name: "Match", desc: "Match the fronts to the backs", min: 3, run: playMatch },
   { icon: "❓", color: "#3b9bff", name: "Quiz", desc: "Choose the correct meaning", min: 4, run: (c, a) => playQuiz(c, false, a) },
-  { icon: "🎧", color: "#ef4a5f", name: "Audio quiz", desc: "Listen to the word and pick its meaning", min: 4, run: (c, a) => playQuiz(c, true, a) },
+  { icon: "🎧", color: "#ef4a5f", name: "Audio quiz", needsAudio: true, desc: "Listen to the word and pick its meaning", min: 4, run: (c, a) => playQuiz(c, true, a) },
   { icon: "🔤", color: "#34b27b", name: "Anagram", desc: "Unscramble the word from its letters", min: 1, run: playAnagram },
   { icon: "⌨️", color: "#8a5cf0", name: "Typing", desc: "Type the word from its meaning", min: 1, run: playType },
 ];
 
+// Cards that are only a picture or only a sound have no text to play with
+const usable = (c) => c.front !== "🔊" && c.front !== "🖼" && c.back !== "(see front)";
 function startGame(g) {
   const d = deckById(gDeckId);
-  if (!d || d.cards.length < g.min) {
-    $("games-msg").textContent = d ? `You need at least ${g.min} cards in this deck.` : "Create a deck first.";
+  const cards = d ? d.cards.filter(usable) : [];
+  const msg = $("games-msg");
+  if (!d || cards.length < g.min) {
+    msg.textContent = d ? `You need at least ${g.min} cards in this deck.` : "Create a deck first.";
     return;
   }
-  $("games-msg").textContent = "";
+  if (g.needsAudio && cards.filter(cardAudio).length < 4) {
+    msg.textContent = "This game needs a deck with audio recordings (import an Anki deck with sound).";
+    return;
+  }
+  msg.textContent = "";
   show("game");
   $("game-title").textContent = g.name;
-  const go = () => g.run(d.cards, go);
+  const go = () => g.run(cards, go);
   go();
 }
 
@@ -243,5 +240,3 @@ document.querySelectorAll(".tabbar button").forEach((b) =>
 );
 $("games-deck").addEventListener("change", (e) => (gDeckId = e.target.value));
 $("exit-game-btn").addEventListener("click", renderGames);
-$("lang-select").value = localStorage.getItem("kartyatar-lang") || "en-US";
-$("lang-select").addEventListener("change", (e) => localStorage.setItem("kartyatar-lang", e.target.value));
