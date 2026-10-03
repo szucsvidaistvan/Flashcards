@@ -2,13 +2,9 @@
 /* Games: practice with the cards of the selected deck (they do not affect scheduling) */
 let gDeckId = null;
 const area = $("game-area");
-const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
-function h(tag, cls, text) {
-  const e = document.createElement(tag);
-  if (cls) e.className = cls;
-  if (text != null) e.textContent = text;
-  return e;
-}
+// (shuffle() and h() live in app.js)
+// A card as a word and its meaning, whichever way the card was made
+const pair = (c) => { const w = wordInfo(c); return w ? { word: w.word, meaning: w.meaning } : { word: c.front, meaning: c.back }; };
 // Real audio from the imported Anki cards sounds much better than the browser voice
 const cardAudio = (c) => (c.aq?.length ? c.aq : c.aa?.length ? c.aa : null);
 function playCardAudio(c) {
@@ -17,7 +13,7 @@ function playCardAudio(c) {
 }
 function speakCard(c) {
   if (cardAudio(c)) playCardAudio(c);
-  else speak(c.front);   // no recording: fall back to the browser voice
+  else speak(pair(c).word);   // no recording: fall back to the browser voice
 }
 const setScore = (t) => ($("game-score").textContent = t);
 function speak(text) {
@@ -48,8 +44,8 @@ function playMatch(cards, again) {
   setScore("");
   const grid = h("div", "match-grid"), L = h("div", "match-col"), R = h("div", "match-col");
   const mk = (txt, id, side) => { const b = h("button", "tile", txt); b.dataset.id = id; b.dataset.side = side; return b; };
-  shuffle(set).forEach((c) => L.append(mk(c.front, c.id, "l")));
-  shuffle(set).forEach((c) => R.append(mk(c.back, c.id, "r")));
+  shuffle(set).forEach((c) => L.append(mk(pair(c).word, c.id, "l")));
+  shuffle(set).forEach((c) => R.append(mk(pair(c).meaning, c.id, "r")));
   grid.append(L, R);
   area.append(grid);
   grid.addEventListener("click", (e) => {
@@ -86,7 +82,7 @@ function playQuiz(cards, audio, again) {
     const c = qs[i];
     setScore(`${i + 1} / ${qs.length}`);
     area.innerHTML = "";
-    const q = h("div", "question", audio ? "🔊" : c.front);
+    const q = h("div", "question", audio ? "🔊" : pair(c).word);
     if (audio) {
       q.classList.add("audio");
       q.setAttribute("role", "button");
@@ -95,15 +91,15 @@ function playQuiz(cards, audio, again) {
       speakCard(c);
     }
     const opts = h("div", "options");
-    const wrongs = shuffle(pool.filter((x) => x.id !== c.id && x.back !== c.back)).slice(0, 3);
+    const wrongs = shuffle(pool.filter((x) => x.id !== c.id && pair(x).meaning !== pair(c).meaning)).slice(0, 3);
     shuffle([c, ...wrongs]).forEach((o) => {
-      const b = h("button", "opt", o.back);
+      const b = h("button", "opt", pair(o).meaning);
       b.onclick = () => {
         opts.querySelectorAll("button").forEach((x) => (x.disabled = true));
         if (o.id === c.id) { b.classList.add("ok"); score++; if (!audio) playCardAudio(c); }
         else {
           b.classList.add("bad");
-          [...opts.children].find((x) => x.textContent === c.back)?.classList.add("ok");
+          [...opts.children].find((x) => x.textContent === pair(c).meaning)?.classList.add("ok");
         }
         i++;
         setTimeout(next, 900);
@@ -118,14 +114,14 @@ function playQuiz(cards, audio, again) {
 
 /* 4) Anagram */
 function playAnagram(cards, again) {
-  const words = shuffle(cards.filter((c) => c.front.replace(/\s/g, "").length > 1)).slice(0, 8);
+  const words = shuffle(cards.filter((c) => pair(c).word.replace(/\s/g, "").length > 1)).slice(0, 8);
   if (!words.length) return finish("No suitable words", "You need cards with at least 2 letters on the front.", renderGames);
   let i = 0, score = 0;
   const next = () => {
     if (i >= words.length) return finish("Result", `${score} / ${words.length} words`, again);
     const c = words[i];
     setScore(`${i + 1} / ${words.length}`);
-    const target = [...c.front.replace(/\s/g, "")];
+    const target = [...pair(c).word.replace(/\s/g, "")];
     let pool = shuffle(target.map((ch) => ({ ch, used: false })));
     for (let t = 0; t < 10 && pool.map((p) => p.ch).join("") === target.join(""); t++) pool = shuffle(pool);
     const picked = [];
@@ -154,7 +150,7 @@ function playAnagram(cards, again) {
     const skip = h("button", "ghost", "Skip");
     skip.onclick = () => { i++; next(); };
     area.innerHTML = "";
-    area.append(h("div", "question", c.back), slots, bank, skip);
+    area.append(h("div", "question", pair(c).meaning), slots, bank, skip);
     draw();
   };
   next();
@@ -175,10 +171,10 @@ function playType(cards, again) {
     const submit = () => {
       if (done) { i++; return next(); }
       done = true;
-      const ok = inp.value.trim().toLowerCase() === c.front.trim().toLowerCase();
+      const ok = inp.value.trim().toLowerCase() === pair(c).word.trim().toLowerCase();
       if (ok) score++;
       playCardAudio(c);
-      fb.textContent = ok ? "Correct!" : "Correct answer: " + c.front;
+      fb.textContent = ok ? "Correct!" : "Correct answer: " + pair(c).word;
       fb.className = "feedback " + (ok ? "ok" : "bad");
       inp.disabled = true;
       btn.textContent = "Next";
@@ -187,7 +183,7 @@ function playType(cards, again) {
     btn.onclick = submit;
     inp.addEventListener("keydown", (e) => e.key === "Enter" && submit());
     area.innerHTML = "";
-    area.append(h("div", "question", c.back), inp, fb, btn);
+    area.append(h("div", "question", pair(c).meaning), inp, fb, btn);
     inp.focus();
   };
   next();
