@@ -147,3 +147,18 @@ html, body { touch-action: pan-x pan-y; }   /* no pinch / double-tap zoom */
 .w-pos { font: italic 1.05rem var(--serif); color: var(--muted); }
 .w-text { font: 700 1.9rem/1.2 var(--serif); overflow-wrap: anywhere; }
 .w-notes { font: .85rem/1.5 var(--sans); color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+
+.face .plain { white-space: pre-line; }
+.ipa-inline { font: normal .92em "Charis SIL", "Doulos SIL", "Segoe UI", system-ui, sans-serif; color: var(--accent); letter-spacing: .02em; }
+#shuffle-btn.on { background: var(--accent); color: var(--accent-ink); }
+.nav { max-width: 560px; margin-inline: auto; }
+.nav button { flex: 1; min-width: 0; padding-inline: .4rem; }
+.nav #toggle-btn { flex: 2; width: auto; margin: 0; }
+input[type=search] { margin: 0 0 .75rem; }
+.card-list li { grid-template-columns: 1fr auto; }
+.row-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; gap: .3rem; }
+.icon-btn { min-height: 40px; min-width: 40px; padding: 0; background: var(--surface2); color: var(--ink); font-size: 1rem; }
+.card-list li.editing { display: grid; grid-template-columns: 1fr; gap: .6rem; padding: 1rem 0; }
+.edit-actions { display: flex; gap: .5rem; }
+.edit-actions button { flex: 1; }
+.row select { width: auto; max-width: 55%; }
