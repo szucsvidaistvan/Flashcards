@@ -162,3 +162,18 @@ input[type=search] { margin: 0 0 .75rem; }
 .edit-actions { display: flex; gap: .5rem; }
 .edit-actions button { flex: 1; }
 .row select { width: auto; max-width: 55%; }
+
+/* ---------- App shell: the page itself never scrolls, only <main>. The bars are docked at the bottom. ---------- */
+html, body { height: 100%; overflow: hidden; }
+body { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  max-width: none; margin: 0; padding: calc(1rem + env(safe-area-inset-top)) max(1rem, calc((100% - 560px) / 2)) 1.5rem; }
+body.immersive main { padding-bottom: 1.5rem; }
+.tabbar { position: static; transform: none; flex: none; width: 100%; border-radius: 0; border: 0; border-top: 1px solid var(--line);
+  box-shadow: none; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
+.tabbar button { border-radius: 14px; }
+#study-footer { flex: none; background: var(--bg); border-top: 1px solid var(--line); }
+.answer-row { position: static; }
+.study-bar { gap: .4rem; }
+#study-progress { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .85rem; }
+.card-img { max-width: 100%; max-height: 36vh; object-fit: contain; border-radius: 14px; }
