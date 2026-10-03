@@ -1,33 +1,46 @@
 "use strict";
-/* ---------- Storage (localStorage) ---------- */
-const STORAGE_KEY = "kartyatar-v1";
+
+/* ---------- Storage: IndexedDB (see store.js), written in the background ---------- */
+const STORAGE_KEY = "kartyatar-v1";   // old localStorage cache, only read once to migrate
 const DAY = 24 * 60 * 60 * 1000;
 const MIN = 60 * 1000;
 
-let state = load();
-state.pending ||= []; // operations not yet synced
+let state = { decks: [], pending: [] };   // filled by boot()
 let currentDeckId = null;
 let queue = [];
 let current = null;
 
-function load() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { decks: [] };
-  } catch {
-    return { decks: [] };
-  }
+let saveTimer = null;
+function save() {                          // debounced: many changes in a row = one write
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 400);
 }
-function save() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    // Browser storage is full (very large collections): keep only the sync queue.
-    // The decks are downloaded from Supabase on the next start.
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ decks: [], pending: state.pending })); } catch {}
-  }
+async function flushSave() {
+  clearTimeout(saveTimer);
+  try { await kv.set("state", state); } catch (e) { console.error("Could not save locally", e); }
+}
+document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && flushSave());
+window.addEventListener("pagehide", flushSave);
+
+async function boot() {
+  let s = await kv.get("state");
+  if (!s) { try { s = JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch {} }
+  state = s && Array.isArray(s.decks) ? s : { decks: [], pending: [] };
+  state.pending ||= [];
+  if (localStorage.getItem(STORAGE_KEY)) { await flushSave(); localStorage.removeItem(STORAGE_KEY); }
+  readHash();
+  saveSession(session);
+  if (session) { renderDecks(); syncInit(); } else showLogin();   // cached cards show up immediately
 }
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const $ = (id) => document.getElementById(id);
+const shuffle = (a) => [...a].sort(() => Math.random() - 0.5);
+function h(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
 const deckById = (id) => state.decks.find((d) => d.id === id);
 
 /* ---------- Deck tree helpers (Anki-style "Parent::Child" names) ---------- */
@@ -127,7 +140,7 @@ function withAudio(r, card) {
   return card;
 }
 
-async function api(path, method = "GET", body) {
+async function api(path, method = "GET", body, raw = false, extra = {}) {
   await ensureToken();
   const res = await fetch(cfg.url.replace(/\/$/, "") + "/rest/v1/" + path, {
     method,
@@ -136,10 +149,13 @@ async function api(path, method = "GET", body) {
       Authorization: "Bearer " + session.access_token,
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates,return=minimal",
+      ...extra,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(await res.text());
+  if (raw) return res;
+  if (raw) return res;
   return method === "GET" ? res.json() : null;
 }
 
@@ -185,38 +201,91 @@ async function flush() {
   flushing = false;
 }
 
-// Supabase returns at most 1000 rows per request, so read the tables page by page
-async function fetchAll(table) {
+async function rowCount(table, filter = "") {
+  const res = await api(`${table}?select=id${filter}&limit=1`, "HEAD", null, true, { Prefer: "count=exact" });
+  const m = /\/(\d+)$/.exec(res.headers.get("content-range") || "");
+  return m ? +m[1] : 0;
+}
+// Supabase returns at most 1000 rows per request: read page by page, 4 pages in parallel
+async function fetchAll(table, since, order) {
+  const filter = since ? `&updated_at=gt.${encodeURIComponent(since)}` : "";
+  const total = await rowCount(table, filter);
+  const pages = Math.ceil(total / 1000);
   const rows = [];
-  for (let off = 0; ; off += 1000) {
-    const page = await api(`${table}?select=*&order=created_at,id&limit=1000&offset=${off}`);
-    rows.push(...page);
-    if (page.length < 1000) break;
+  for (let i = 0; i < pages; i += 4) {
+    const batch = await Promise.all(
+      Array.from({ length: Math.min(4, pages - i) }, (_, k) =>
+        api(`${table}?select=*${filter}&order=${order}&limit=1000&offset=${(i + k) * 1000}`))
+    );
+    batch.forEach((b) => rows.push(...b));
+    if (total > 1000) setStatus(`Syncing… ${rows.length} / ${total}`);
   }
   return rows;
 }
-async function pull() {
-  const decks = await fetchAll("decks");
-  const cards = await fetchAll("cards");
-  if (!decks.length && state.decks.length) {
-    // First run: upload the existing local data
-    for (const d of state.decks) state.pending.push({ type: "deck", id: d.id });
-    for (const d of state.decks) for (const c of d.cards) state.pending.push({ type: "card", id: c.id });
-    save();
-    await flush();
-    return;
-  }
+const maxStamp = (rows, prev = "") => rows.reduce((m, r) => (r.updated_at > m ? r.updated_at : m), prev);
+const cmpRows = (x, y) => (x.created_at < y.created_at ? -1 : x.created_at > y.created_at ? 1 : natural(x.id, y.id));
+
+async function uploadLocal() {   // first run: the server is empty, upload what is on this device
+  for (const d of state.decks) state.pending.push({ type: "deck", id: d.id });
+  for (const d of state.decks) for (const c of d.cards) state.pending.push({ type: "card", id: c.id });
+  save();
+  await flush();
+}
+function rebuild(deckRows, cardRows) {
   const byDeck = new Map();
-  for (const r of cards) {
+  for (const r of cardRows) {
     if (!byDeck.has(r.deck_id)) byDeck.set(r.deck_id, []);
     byDeck.get(r.deck_id).push(r);
   }
-  const cmp = (x, y) => (x.created_at < y.created_at ? -1 : x.created_at > y.created_at ? 1 : natural(x.id, y.id));
-  state.decks = decks.map((d) => ({
+  state.decks = deckRows.map((d) => ({
     id: d.id, name: d.name,
-    cards: (byDeck.get(d.id) || []).sort(cmp).map(fromRow),
+    cards: (byDeck.get(d.id) || []).sort(cmpRows).map(fromRow),
   }));
+}
+function mergeDelta(deckRows, cardRows) {   // apply only the cards that changed since the last sync
+  const old = new Map(state.decks.map((d) => [d.id, d]));
+  state.decks = deckRows.map((d) => ({ id: d.id, name: d.name, cards: old.get(d.id)?.cards || [] }));
+  const decks = new Map(state.decks.map((d) => [d.id, d]));
+  const where = new Map();
+  for (const d of state.decks) for (const c of d.cards) where.set(c.id, [d, c]);
+  for (const r of cardRows) {
+    const d = decks.get(r.deck_id);
+    if (!d) continue;
+    const card = fromRow(r), hit = where.get(r.id);
+    if (hit) {
+      const i = hit[0].cards.indexOf(hit[1]);
+      if (hit[0] === d) { d.cards[i] = card; where.set(r.id, [d, card]); continue; }
+      hit[0].cards.splice(i, 1);   // the card moved to another deck
+    }
+    d.cards.push(card);
+    where.set(r.id, [d, card]);
+  }
+}
+async function pullFast() {   // needs the updated_at column (supabase-fast.sql)
+  const deckRows = await fetchAll("decks", null, "updated_at,id");
+  if (!deckRows.length && state.decks.length) return uploadLocal();
+  const total = await rowCount("cards");
+  const since = cardCount(state.decks) ? state.lastSync : null;
+  let cardRows = await fetchAll("cards", since, "updated_at,id");
+  if (since) {
+    mergeDelta(deckRows, cardRows);
+    if (cardCount(state.decks) !== total) {   // something was deleted elsewhere: download everything once
+      cardRows = await fetchAll("cards", null, "updated_at,id");
+      rebuild(deckRows, cardRows);
+    }
+  } else rebuild(deckRows, cardRows);
+  state.lastSync = maxStamp(cardRows, maxStamp(deckRows, since || ""));
   save();
+}
+async function pullFull() {   // works without the updated_at column
+  const deckRows = await fetchAll("decks", null, "created_at,id");
+  if (!deckRows.length && state.decks.length) return uploadLocal();
+  rebuild(deckRows, await fetchAll("cards", null, "created_at,id"));
+  save();
+}
+async function pull() {
+  try { await pullFast(); }
+  catch (e) { console.warn("Fast sync unavailable, using full sync", e); await pullFull(); }
 }
 async function syncInit() {
   if (!session) return showLogin();
@@ -287,6 +356,7 @@ function renderDecks(path = browsePath) {
   while (path && !decksUnder(path).length) path = parentPath(path);   // folder disappeared
   browsePath = path;
   currentDeckId = null;
+  shownDeckId = null;
   show("decks");
   const inside = path !== "";
   $("browse-back").hidden = !inside;
@@ -325,53 +395,108 @@ function renderDecks(path = browsePath) {
   if (!list.children.length) list.innerHTML = '<li class="empty">No decks yet. Create your first one above.</li>';
 }
 
+let shownDeckId = null, searchQuery = "";
+const plain = (t) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();   // search ignores accents and case
+const searchCache = new WeakMap();
+function haystack(c) {
+  let t = searchCache.get(c);
+  if (t === undefined) { t = plain(`${c.front}\n${c.back}\n${c.ipa || ""}`); searchCache.set(c, t); }
+  return t;
+}
+function matching(d) {   // every word of the query must appear somewhere on the card
+  const terms = plain(searchQuery).split(/\s+/).filter(Boolean);
+  return terms.length ? d.cards.filter((c) => { const t = haystack(c); return terms.every((w) => t.includes(w)); }) : d.cards;
+}
+
 function renderDeck(id, page = 0) {
   currentDeckId = id;
   const d = deckById(id);
   show("deck");
+  if (shownDeckId !== id) { shownDeckId = id; searchQuery = ""; $("card-search").value = ""; }
   $("deck-title").textContent = lastSeg(d.name);
   $("deck-path").textContent = parentPath(d.name).split(SEP).join(" › ");
+  renderCards(d, page);
+}
 
-  const pages = Math.max(1, Math.ceil(d.cards.length / PAGE));
-  const cardPage = Math.min(page, pages - 1);
-  const from = cardPage * PAGE;
-  const slice = d.cards.slice(from, from + PAGE);
-  $("deck-stats").textContent = `${d.cards.length} cards`;
-  $("pager").hidden = d.cards.length <= PAGE;
-  $("pager-info").textContent = `${from + 1}–${from + slice.length} of ${d.cards.length}`;
-  $("page-prev").disabled = cardPage === 0;
-  $("page-next").disabled = cardPage >= pages - 1;
-  $("page-prev").onclick = () => renderDeck(id, cardPage - 1);
-  $("page-next").onclick = () => renderDeck(id, cardPage + 1);
+function iconBtn(text, label, fn) {
+  const b = h("button", "icon-btn", text);
+  b.setAttribute("aria-label", label);
+  b.onclick = fn;
+  return b;
+}
+function renderCards(d, page = 0) {
+  const found = matching(d);
+  const pages = Math.max(1, Math.ceil(found.length / PAGE));
+  const cp = Math.min(page, pages - 1), from = cp * PAGE;
+  const slice = found.slice(from, from + PAGE);
+  $("deck-stats").textContent = searchQuery.trim() ? `${found.length} of ${d.cards.length} cards` : `${d.cards.length} cards`;
+  $("pager").hidden = found.length <= PAGE;
+  $("pager-info").textContent = `${from + 1}–${from + slice.length} of ${found.length}`;
+  $("page-prev").disabled = cp === 0;
+  $("page-next").disabled = cp >= pages - 1;
+  const go = (p) => { renderCards(d, p); $("card-list").scrollIntoView({ block: "start" }); };
+  $("page-prev").onclick = () => go(cp - 1);
+  $("page-next").onclick = () => go(cp + 1);
 
   const list = $("card-list");
   list.innerHTML = "";
-  if (!d.cards.length) list.innerHTML = '<li class="empty">Add your first card above.</li>';
+  if (!slice.length) list.innerHTML = `<li class="empty">${d.cards.length ? "No cards match your search." : "Add your first card above."}</li>`;
+  const again = () => renderCards(d, cp);
   for (const card of slice) {
     const li = document.createElement("li");
-    const a = document.createElement("span");
-    const b = document.createElement("span");
-    a.textContent = card.front;
-    b.textContent = card.back;
-    const del = document.createElement("button");
-    del.className = "danger small";
-    del.textContent = "Delete";
-    del.addEventListener("click", () => {
-      d.cards = d.cards.filter((x) => x.id !== card.id);
-      enqueue("delCard", card.id);
-      renderDeck(id, cardPage);
-    });
-    li.append(a, b, del);
+    const acts = h("div", "row-actions");
+    const sound = [...(card.aq || []), ...(card.aa || [])].slice(0, 1);
+    if (sound.length) acts.append(iconBtn("🔊", "Play audio", () => playAudio(sound, true)));
+    acts.append(
+      iconBtn("✎", "Edit card", () => editRow(li, card, again)),
+      iconBtn("✕", "Delete card", () => {
+        d.cards = d.cards.filter((x) => x.id !== card.id);
+        enqueue("delCard", card.id);
+        again();
+      })
+    );
+    li.append(h("span", null, card.front), h("span", null, card.back), acts);
     list.append(li);
   }
 }
 
+// Edit a card right in the list
+function editRow(li, card, done) {
+  li.className = "editing";
+  li.innerHTML = "";
+  const front = h("textarea"), back = h("textarea"), ipa = h("input");
+  front.value = card.front; back.value = card.back; ipa.value = card.ipa || "";
+  front.rows = back.rows = 2;
+  ipa.placeholder = "e.g. /wɜrld/ (optional)";
+  const field = (t, el) => { const l = h("label", null, t); l.append(el); return l; };
+  const save = h("button", null, "Save"), cancel = h("button", "ghost", "Cancel");
+  save.onclick = () => {
+    const f = front.value.trim(), b = back.value.trim(), i = ipa.value.trim();
+    if (!f || !b) return;
+    card.front = f; card.back = b;
+    if (i) card.ipa = i; else delete card.ipa;
+    searchCache.delete(card);
+    enqueue("card", card.id);
+    done();
+  };
+  cancel.onclick = done;
+  const row = h("div", "edit-actions");
+  row.append(save, cancel);
+  li.append(field("Front", front), field("Back", back), field("Pronunciation", ipa), row);
+  front.focus();
+}
+
 /* ---------- Study ---------- */
 let lastScope = [], studySize = 0;
+let simple = true, list = [], baseList = [], idx = 0, shuffled = false, posKey = "", revealed = false;
 // "Study" works any time: due cards first, then new cards, then the ones due soonest (review ahead)
 function startStudy(scope, from) {
   studyFrom = from;
   lastScope = scope;
+  simple = (localStorage.getItem("flashcards-mode") || "simple") === "simple";
+  $("shuffle-btn").hidden = !simple;
+  $("nav-wrap").hidden = true;
+  if (simple) return startSimple(scope, from);
   const due = [], fresh = [], ahead = [];
   for (const d of [...scope].sort((x, y) => natural(x.name, y.name)))
     for (const c of d.cards) {
@@ -401,11 +526,24 @@ function wordInfo(c) {
 }
 const audioFor = (c, side) => (side === "back" && c.aa?.length ? c.aa : c.aq);
 
+// Pronunciations inside normal text, like [wɜrld] or /wɜrld/, get their own look
+const IPA_SPLIT = /(\[[^\]\n]{1,60}\]|\/[^\s\/][^\/\n]{0,40}\/)/;
+const IPA_CHAR = /[\u0250-\u02FF\u0300-\u036F\u1D00-\u1DBF]/;
+function fmt(el, text) {
+  text.split(IPA_SPLIT).forEach((part, i) => {
+    if (i % 2 && IPA_CHAR.test(part)) el.append(h("span", "ipa-inline", part));
+    else el.append(document.createTextNode(part));
+  });
+  return el;
+}
+
 function renderFace(side) {
   const face = $("card-face"), c = current, w = wordInfo(c);
   face.innerHTML = "";
   if (!w) {
-    face.append(h("p", "plain", side === "front" ? c.front : c.back));
+    const p = h("p", "plain");
+    fmt(p, side === "front" ? c.front : c.back);
+    face.append(p);
     if (ipaShown && c.ipa) face.append(h("div", "w-notes", c.ipa));
     return;
   }
@@ -417,7 +555,7 @@ function renderFace(side) {
     if (ipaShown) face.append(h("div", "w-ipa", ipaLine));
   }
   if (side === "back" && (c.aq || c.aa)) {
-    const p = h("button", "w-play", "▶");
+    const p = h("button", "w-play", "🔊");
     p.setAttribute("aria-label", "Play audio");
     p.onclick = (e) => { e.stopPropagation(); playAudio(audioFor(c, side), true); };
     face.append(p);
@@ -465,6 +603,7 @@ function nextCard() {
   if (nx) audioPrefetch([...(nx.aq || []), ...(nx.aa || [])]);   // download the next card's audio ahead of time
 }
 function reveal() {
+  if (simple) return current && setSide(!revealed);
   if (!current || !$("rate-wrap").hidden) return;
   playAudio(current.aa);
   $("flashcard").classList.add("back");
@@ -476,8 +615,56 @@ function reveal() {
   $("rate-wrap").hidden = false;
   for (const r of ["again", "hard", "good", "easy"]) $("t-" + r).textContent = label(current, r);
 }
+/* ---------- Simple study: Previous / Show answer / Next (remembers where you stopped) ---------- */
+function startSimple(scope, from) {
+  baseList = [...scope].sort((x, y) => natural(x.name, y.name)).flatMap((d) => d.cards);
+  posKey = "flashcards-pos:" + (from.deck ?? "folder:" + from.folder);
+  shuffled = false;
+  list = baseList;
+  $("shuffle-btn").classList.remove("on");
+  idx = Math.min(Math.max(0, +localStorage.getItem(posKey) || 0), Math.max(0, list.length - 1));
+  studySize = list.length;
+  show("study");
+  showSimple();
+}
+function showSimple() {
+  for (const id of ["study-done", "more-wrap", "show-wrap", "rate-wrap"]) $(id).hidden = true;
+  if (!list.length) {
+    current = null;
+    $("flashcard").hidden = $("nav-wrap").hidden = true;
+    $("play-btn").hidden = $("ipa-btn").hidden = true;
+    $("study-progress").textContent = "";
+    $("study-done").textContent = "This deck has no cards yet.";
+    $("study-done").hidden = false;
+    return;
+  }
+  current = list[idx];
+  ipaShown = false;
+  $("flashcard").hidden = $("nav-wrap").hidden = false;
+  $("study-progress").textContent = `Card ${idx + 1} / ${list.length}`;
+  setSide(false);
+  if (!shuffled) localStorage.setItem(posKey, idx);
+  const nx = list[(idx + 1) % list.length];
+  audioPrefetch([...(nx.aq || []), ...(nx.aa || [])]);
+}
+function setSide(back) {
+  revealed = back;
+  $("flashcard").classList.toggle("back", back);
+  if (back) ipaShown = ipaShown || autoIpa();
+  renderFace(back ? "back" : "front");
+  updateIpaBtn();
+  $("toggle-btn").textContent = back ? "Hide answer" : "Show answer";
+  $("play-btn").hidden = !(current.aq || current.aa) || (back && !!wordInfo(current));
+  playAudio(back ? current.aa : current.aq);
+}
+function step(d) {
+  if (!list.length) return;
+  idx = (idx + d + list.length) % list.length;
+  showSimple();
+}
+
 function rate(rating) {
-  if (!current || $("rate-wrap").hidden) return;
+  if (simple || !current || $("rate-wrap").hidden) return;
   Object.assign(current, schedule(current, rating));
   queue.shift();
   if (rating === "again") queue.push(current); // show again in this session
@@ -547,6 +734,12 @@ document.querySelectorAll("[data-rating]").forEach((b) =>
 // Shortcuts: Space = show answer, 1–4 = rate
 document.addEventListener("keydown", (e) => {
   if ($("view-study").hidden || /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  if (simple) {   // Space = show answer, then next card; arrows = previous / next
+    if (e.code === "Space") { e.preventDefault(); revealed ? step(1) : setSide(true); }
+    else if (e.key === "ArrowRight") step(1);
+    else if (e.key === "ArrowLeft") step(-1);
+    return;
+  }
   if (e.code === "Space") { e.preventDefault(); reveal(); }
   const map = { 1: "again", 2: "hard", 3: "good", 4: "easy" };
   if (map[e.key]) rate(map[e.key]);
@@ -609,10 +802,6 @@ $("logout-btn").addEventListener("click", async () => {
   showLogin();
 });
 
-readHash();
-saveSession(session);
-if (session) { renderDecks(); syncInit(); } else showLogin();
-
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
 // Autoplay setting (Settings tab)
@@ -633,3 +822,33 @@ $("auto-ipa").addEventListener("change", (e) => localStorage.setItem("flashcards
 // No pinch or double-tap zoom: the app should feel native
 ["gesturestart", "gesturechange", "gestureend"].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
 document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+
+// Simple study buttons
+$("prev-btn").addEventListener("click", () => step(-1));
+$("next-btn").addEventListener("click", () => step(1));
+$("toggle-btn").addEventListener("click", () => setSide(!revealed));
+$("shuffle-btn").addEventListener("click", () => {
+  if (!simple) return;
+  shuffled = !shuffled;
+  list = shuffled ? shuffle(baseList) : baseList;
+  idx = 0;
+  $("shuffle-btn").classList.toggle("on", shuffled);
+  showSimple();
+});
+
+// Search in a deck
+let searchTimer;
+$("card-search").addEventListener("input", (e) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    searchQuery = e.target.value;
+    const d = deckById(currentDeckId);
+    if (d) renderCards(d, 0);
+  }, 150);
+});
+
+// Study mode (Settings)
+$("study-mode").value = localStorage.getItem("flashcards-mode") || "simple";
+$("study-mode").addEventListener("change", (e) => localStorage.setItem("flashcards-mode", e.target.value));
+
+boot();
